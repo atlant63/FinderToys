@@ -147,6 +147,8 @@ if [ "$DO_INSTALL" = true ]; then
     xattr -dr com.apple.quarantine "/Applications/MacNewFile.app" 2>/dev/null || true
 
     # Re-register extension
+    /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "/Applications/MacNewFile.app" 2>/dev/null || true
+    pluginkit -a "/Applications/MacNewFile.app/Contents/PlugIns/MacNewFileFinderExtension.appex" 2>/dev/null || true
     pluginkit -e use -i com.louieyin.MacNewFile.MacNewFileFinderExtension 2>/dev/null || true
 
     # Clean up stale/ghost Finder toolbar items and ensure MacNewFile toolbar item is registered
