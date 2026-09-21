@@ -3,109 +3,145 @@
 <img src="./assets/logo.png" width="128" height="128" alt="FinderToys Logo">
 
 # FinderToys 🛠️
-**The missing power-user utilities for macOS Finder.**
-
-**English** | [Русский](README.ru.md)
+**Полезные утилиты и горячие клавиши для macOS Finder**  
+*The missing power-user utilities for macOS Finder*
 
 [![macOS](https://img.shields.io/badge/macOS-13.0+-A2AAAD?style=flat-square&logo=apple)](https://apple.com)
 [![Architecture](https://img.shields.io/badge/Architecture-Apple%20Silicon%20%7C%20Intel-blue?style=flat-square)](#)
 [![License](https://img.shields.io/badge/License-GPL--3.0-green?style=flat-square)](./LICENSE)
-[![Size](https://img.shields.io/badge/DMG-~1MB-success?style=flat-square)](#)
+[![Size](https://img.shields.io/badge/DMG-942%20KB-success?style=flat-square)](#)
+
+<br/>
+
+### ⬇️ **[Скачать FinderToys.dmg (942 КБ)](https://github.com/Danikk13/FinderToys/releases/download/v2.0.0/FinderToys.dmg)**
+*(Прямая ссылка на готовый установочный образ)*
 
 </div>
 
-**FinderToys** supercharges macOS Finder with intuitive keyboard controls, smart clipboard file creation, and a rich right-click context menu. Written entirely in native Objective-C and AppKit, it runs with near-zero CPU usage, has zero Electron bloat, and seamlessly blends into macOS.
-
 ---
 
-## ⚡ Quick Installation
+## ⚡ Установка одной командой в Терминале / Quick Install
 
-### Option 1: Terminal One-Liner (Recommended)
-Open Terminal and run:
+Откройте приложение **«Терминал»** (Terminal) и вставьте команду:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Danikk13/FinderToys/main/install.sh | bash
 ```
-
-### Option 2: DMG Download
-1. Download **[`FinderToys.dmg`](https://github.com/Danikk13/FinderToys/releases/latest/download/FinderToys.dmg)**.
-2. Open the `.dmg` and drag **FinderToys** into your **Applications** folder.
-3. Launch **FinderToys** from Applications.
+> *Скрипт автоматически загрузит свежий `.dmg`, установит приложение в папку «Программы», снимет системный карантин macOS, активирует расширение Finder и сразу запустит утилиту.*
 
 ---
 
-## ✨ Features
+<details open>
+<summary><h2>🇷🇺 Документация и возможности (нажмите, чтобы свернуть)</h2></summary>
 
-### ⌨️ Intuitive Hotkeys
-| Action | Key Combination | Description |
+### 💡 Что умеет FinderToys?
+**FinderToys** расширяет стандартный Finder в macOS интуитивным управлением с клавиатуры, умным созданием файлов из буфера обмена и удобным контекстным меню по правому клику мыши. Приложение полностью нативное (Objective-C + AppKit), потребляет ~0% процессора и работает плавно.
+
+---
+
+### ⌨️ Горячие клавиши
+| Действие | Сочетание клавиш | Описание |
+| :--- | :--- | :--- |
+| **Открыть файл/папку** | <kbd>Enter</kbd> (Return) | Мгновенно открывает выбранный элемент вместо его переименования. |
+| **Переименовать** | <kbd>F2</kbd>, <kbd>⌥ Option + F2</kbd>, <kbd>⌘ Cmd + R</kbd> | Запускает стандартное системное переименование. |
+| **Доп. переименование** | <kbd>⇧ Shift + Enter</kbd>, <kbd>⌥ Option + Enter</kbd> | Альтернативные сочетания для быстрого переименования. |
+
+> [!NOTE]
+> **Умная защита ввода:** При наборе текста (когда вы редактируете имя файла, ищете через Spotlight в Finder или вводите путь) клавиши <kbd>Enter</kbd> и <kbd>⌘V</kbd> работают в стандартном текстовом режиме и не перехватываются.
+
+---
+
+### 📋 Умная вставка из буфера (<kbd>⌘ Cmd + V</kbd>)
+Нажмите <kbd>⌘V</kbd> в любой открытой папке Finder или на Рабочем столе:
+
+* **Картинки:** Скопировали скриншот или изображение из браузера? Нажмите <kbd>⌘V</kbd> — файл сохранится как `image.png` (с авто-нумерацией: `image 2.png`, `image 3.png`...).
+* **Текст и код:** Скопировали фрагмент кода или текст? Нажмите <kbd>⌘V</kbd> — создастся текстовый файл `Clipboard.txt`.
+* **JSON:** Скопировали данные JSON? Нажмите <kbd>⌘V</kbd> — сохранится файл `Clipboard.json`.
+* **Веб-ссылки:** Скопировали URL-адрес? Нажмите <kbd>⌘V</kbd> — создастся ярлык сайта `.webloc`.
+* **Автоопределение папки:** Файл создается именно в той папке, в которой вы сейчас находитесь (Загрузки, Документы, внешний диск/SSD или Рабочий стол) и сразу подсвечивается.
+* **Без конфликтов:** Если скопированы обычные файлы/папки в Finder, выполняется стандартная вставка macOS.
+
+---
+
+### 🖱️ Контекстное меню по правому клику (ПКМ)
+Кликните правой кнопкой мыши в любом месте Finder или на Рабочем столе:
+1. **Новый файл:** Создание пустых файлов шаблонов:
+   * Текст (`.txt`), Markdown (`.md`), JSON (`.json`)
+   * Microsoft Office: Word (`.docx`), Excel (`.xlsx`), PowerPoint (`.pptx`)
+   * Apple iWork: Pages (`.pages`), Numbers (`.numbers`), Keynote (`.key`)
+2. **Скопировать путь:** Копирует чистый POSIX-путь без лишних кавычек.
+3. **Открыть терминал:** Мгновенно открывает Терминал в текущей папке.
+
+---
+
+### 🌐 Строка меню и автоопределение языка
+* Иконка в строке меню с переключателями горячих клавиш.
+* **Автоматический язык:** Если macOS на русском языке — интерфейс полностью на русском. На остальных системах автоматически включается английский.
+
+---
+
+### 🔒 Настройка разрешений macOS
+1. **Универсальный доступ:** `Системные настройки` → `Конфиденциальность и безопасность` → `Универсальный доступ` → включите **FinderToys**.
+2. **Расширение Finder:** `Системные настройки` → `Основные` → `Объекты входа и расширения` → `Расширения Finder` → включите **FinderToys**.
+
+</details>
+
+---
+
+<details>
+<summary><h2>🇬🇧 Documentation & Features (English)</h2></summary>
+
+### 💡 What is FinderToys?
+**FinderToys** supercharges macOS Finder with intuitive keyboard controls, smart clipboard file creation, and a rich right-click context menu. Written in native Objective-C & AppKit, zero Electron bloat, and near-zero CPU footprint.
+
+---
+
+### ⌨️ Hotkeys
+| Action | Shortcut | Description |
 | :--- | :--- | :--- |
 | **Open File/Folder** | <kbd>Enter</kbd> (Return) | Opens the selected item immediately instead of renaming it. |
-| **Rename File/Folder** | <kbd>F2</kbd>, <kbd>⌥ Option + F2</kbd>, <kbd>⌘ Cmd + R</kbd> | Triggers native in-line file renaming without delay. |
+| **Rename** | <kbd>F2</kbd>, <kbd>⌥ Option + F2</kbd>, <kbd>⌘ Cmd + R</kbd> | Triggers native in-line file renaming without delay. |
 | **Alternative Rename** | <kbd>⇧ Shift + Enter</kbd>, <kbd>⌥ Option + Enter</kbd> | Secondary shortcuts for quick renaming flexibility. |
 
 > [!NOTE]
-> **Safety First:** When renaming an item or typing in Finder search fields, <kbd>Enter</kbd> and <kbd>⌘V</kbd> behave normally so your input is never disrupted.
+> **Input Safety:** When editing text fields (search bars, file renaming, Go to Folder), <kbd>Enter</kbd> and <kbd>⌘V</kbd> behave normally.
 
 ---
 
 ### 📋 Smart Clipboard Paste (<kbd>⌘ Cmd + V</kbd>)
-Press <kbd>⌘V</kbd> inside any Finder folder or on your Desktop to instantly convert clipboard contents into files:
+Press <kbd>⌘V</kbd> inside any Finder folder or on Desktop:
 
-* **Images:** Copied a screenshot, meme, or web image? Press <kbd>⌘V</kbd> to save it directly as `image.png` (automatically increments: `image 2.png`, `image 3.png`, etc.).
-* **Text & Code:** Copied code or text? Press <kbd>⌘V</kbd> to save it as `Clipboard.txt`.
-* **JSON:** Copied valid JSON formatted data? Press <kbd>⌘V</kbd> to save it as `Clipboard.json`.
-* **Web Links:** Copied a single URL? Press <kbd>⌘V</kbd> to create a `.webloc` internet shortcut.
-* **Context Aware:** Dynamically detects the currently active Finder directory (Downloads, Documents, external drives, or Desktop) and selects the created file immediately.
-* **Zero Conflict:** Bypasses file conversion if you copied actual files or folders in Finder, allowing native copy/paste.
+* **Images:** Copy any screenshot or web image and press <kbd>⌘V</kbd> to save directly as `image.png` (auto-increments: `image 2.png`, etc.).
+* **Text & Code:** Copy text or code and press <kbd>⌘V</kbd> to save as `Clipboard.txt`.
+* **JSON:** Valid JSON automatically saves as `Clipboard.json`.
+* **Web URLs:** Single web addresses save as `.webloc` internet shortcuts.
+* **Context Aware:** Saves directly into whichever folder is currently focused (Downloads, Documents, external drives, or Desktop).
+* **Zero Conflict:** Transparently passes through standard file/folder copying.
 
 ---
 
 ### 🖱️ Right-Click Context Menu
-Right-click anywhere in Finder or on Desktop:
-
-1. **New File:** Instant creation of blank template documents:
-   * **Plain Text** (`.txt`), **Markdown** (`.md`), **JSON** (`.json`)
-   * **Microsoft Office:** Word (`.docx`), Excel (`.xlsx`), PowerPoint (`.pptx`)
-   * **Apple iWork:** Pages (`.pages`), Numbers (`.numbers`), Keynote (`.key`)
-2. **Copy Path:** Copies the clean POSIX path directly to clipboard (without wrapping quotes).
-3. **Open Terminal:** Launches Terminal positioned directly at the current folder.
+1. **New File:** Blank templates for Text, Markdown, JSON, MS Office (Word, Excel, PowerPoint), and Apple iWork (Pages, Numbers, Keynote).
+2. **Copy Path:** Copies clean POSIX path without quotes.
+3. **Open Terminal:** Launches Terminal positioned directly at the active folder.
 
 ---
 
-### 🌐 Menu Bar & Auto Language Detection
-* Clean menu bar status item with toggles for all key features.
-* **Automatic System Language:** Automatically detects your macOS system language:
-  * Uses **Russian** on Russian macOS systems (`ru-RU`, `ru-UZ`, etc.).
-  * Defaults to **English** for international systems.
+### 🔒 Permissions
+1. **Accessibility:** System Settings → Privacy & Security → Accessibility → Enable **FinderToys**.
+2. **Finder Extension:** System Settings → General → Login Items & Extensions → Finder Extensions → Enable **FinderToys**.
 
 ---
 
-## 🔒 Permissions & Setup
-
-FinderToys requires two standard macOS permissions to function:
-
-1. **Accessibility (for Enter to Open & F2 / ⌘V Hotkeys):**
-   * Go to **System Settings** → **Privacy & Security** → **Accessibility**.
-   * Toggle **FinderToys** (or `MacNewFile`) to **ON**.
-2. **Finder Extension (for Context Menu):**
-   * Go to **System Settings** → **General** → **Login Items & Extensions** → **Finder Extensions**.
-   * Toggle **FinderToys Extension** to **ON**.
-
----
-
-## 🛠️ Building from Source
-
-Requirements: macOS 13.0+ and Xcode Command Line Tools (`xcode-select --install`).
-
+### 🛠️ Building from Source
 ```bash
 git clone git@github.com:Danikk13/FinderToys.git
 cd FinderToys
 ./build.sh -d -i
 ```
-* `-d`: Generates `dist/MacNewFile.dmg` installer.
-* `-i`: Installs and launches the application in `/Applications`.
+
+</details>
 
 ---
 
 ## 📄 License
-
-FinderToys is distributed under the GNU General Public License v3.0. See [LICENSE](./LICENSE) for details.
+Distributed under the GNU General Public License v3.0. See [LICENSE](./LICENSE) for details.
