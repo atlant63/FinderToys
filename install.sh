@@ -4,7 +4,7 @@ set -e
 # ==============================================================================
 #  FinderToys Installer Script
 #  One-line installation:
-#  curl -fsSL https://raw.githubusercontent.com/Danikk13/FinderToys/main/install.sh | bash
+#  curl -fsSL https://raw.githubusercontent.com/atlant63/FinderToys/main/install.sh | bash
 # ==============================================================================
 
 echo ""
@@ -17,7 +17,7 @@ if [ "$(uname)" != "Darwin" ]; then
     exit 1
 fi
 
-REPO="Danikk13/FinderToys"
+REPO="atlant63/FinderToys"
 TMP_DIR=$(mktemp -d /tmp/findertoys.XXXXXX)
 DMG_PATH="$TMP_DIR/FinderToys.dmg"
 
@@ -85,7 +85,7 @@ if img:
 echo "  🔌 Registering Finder extension..."
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "/Applications/FinderToys.app" 2>/dev/null || true
 pluginkit -a "/Applications/FinderToys.app/Contents/PlugIns/FinderToysExtension.appex" 2>/dev/null || true
-pluginkit -e use -i com.danikk13.FinderToys.FinderToysExtension 2>/dev/null || true
+pluginkit -e use -i com.atlant63.FinderToys.FinderToysExtension 2>/dev/null || true
 
 # Launch App
 open "/Applications/FinderToys.app"

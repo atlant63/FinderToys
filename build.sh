@@ -87,7 +87,7 @@ fi
 /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable FinderToys" "$APP_DIR/Contents/Info.plist" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :CFBundleExecutable string FinderToys" "$APP_DIR/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleName FinderToys" "$APP_DIR/Contents/Info.plist" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :CFBundleName string FinderToys" "$APP_DIR/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName FinderToys" "$APP_DIR/Contents/Info.plist" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string FinderToys" "$APP_DIR/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.danikk13.FinderToys" "$APP_DIR/Contents/Info.plist" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string com.danikk13.FinderToys" "$APP_DIR/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.atlant63.FinderToys" "$APP_DIR/Contents/Info.plist" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string com.atlant63.FinderToys" "$APP_DIR/Contents/Info.plist"
 
 /usr/libexec/PlistBuddy -c "Delete :CFBundleLocalizations" "$APP_DIR/Contents/Info.plist" 2>/dev/null || true
 /usr/libexec/PlistBuddy -c "Add :CFBundleLocalizations array" "$APP_DIR/Contents/Info.plist" 2>/dev/null || true
@@ -100,7 +100,7 @@ fi
 /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable FinderToysExtension" "$EXT_DIR/Contents/Info.plist" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :CFBundleExecutable string FinderToysExtension" "$EXT_DIR/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleName FinderToysExtension" "$EXT_DIR/Contents/Info.plist" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :CFBundleName string FinderToysExtension" "$EXT_DIR/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName 'FinderToys Extension'" "$EXT_DIR/Contents/Info.plist" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string 'FinderToys Extension'" "$EXT_DIR/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.danikk13.FinderToys.FinderToysExtension" "$EXT_DIR/Contents/Info.plist" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string com.danikk13.FinderToys.FinderToysExtension" "$EXT_DIR/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.atlant63.FinderToys.FinderToysExtension" "$EXT_DIR/Contents/Info.plist" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string com.atlant63.FinderToys.FinderToysExtension" "$EXT_DIR/Contents/Info.plist"
 
 /usr/libexec/PlistBuddy -c "Delete :CFBundleLocalizations" "$EXT_DIR/Contents/Info.plist" 2>/dev/null || true
 /usr/libexec/PlistBuddy -c "Add :CFBundleLocalizations array" "$EXT_DIR/Contents/Info.plist" 2>/dev/null || true
@@ -113,8 +113,8 @@ rm -f "$APP_DIR/Contents/MacOS/MacNewFile.debug.dylib" "$APP_DIR/Contents/MacOS/
 echo "==> Code-signing with entitlements..."
 codesign --force --sign - --entitlements "$SCRIPT_DIR/FinderToysExtension/MacNewFileFinderExtension.entitlements" "$EXT_DIR/Contents/MacOS/FinderToysExtension"
 codesign --force --sign - --entitlements "$SCRIPT_DIR/FinderToysExtension/MacNewFileFinderExtension.entitlements" "$EXT_DIR"
-codesign --force --sign - -r="designated => identifier \"com.danikk13.FinderToys\"" --entitlements "$SCRIPT_DIR/FinderToys/MacNewFile.entitlements" "$APP_DIR/Contents/MacOS/FinderToys"
-codesign --force --sign - -r="designated => identifier \"com.danikk13.FinderToys\"" --entitlements "$SCRIPT_DIR/FinderToys/MacNewFile.entitlements" "$APP_DIR"
+codesign --force --sign - -r="designated => identifier \"com.atlant63.FinderToys\"" --entitlements "$SCRIPT_DIR/FinderToys/MacNewFile.entitlements" "$APP_DIR/Contents/MacOS/FinderToys"
+codesign --force --sign - -r="designated => identifier \"com.atlant63.FinderToys\"" --entitlements "$SCRIPT_DIR/FinderToys/MacNewFile.entitlements" "$APP_DIR"
 
 echo "==> Build complete: $APP_DIR"
 
@@ -181,7 +181,7 @@ if img:
     # Permanent registration
     /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "/Applications/FinderToys.app" 2>/dev/null || true
     pluginkit -a "/Applications/FinderToys.app/Contents/PlugIns/FinderToysExtension.appex" 2>/dev/null || true
-    pluginkit -e use -i com.danikk13.FinderToys.FinderToysExtension 2>/dev/null || true
+    pluginkit -e use -i com.atlant63.FinderToys.FinderToysExtension 2>/dev/null || true
 
     # Clean up old toolbar identifiers and register FinderToys
     python3 -c "
@@ -193,7 +193,7 @@ if val is not None:
     val = dict(val)
     items = list(val.get('TB Item Identifiers', []))
     items = [x for x in items if x not in ['com.haoqiqin.SuperRClick.FinderSync', 'net.langui.NewFileMenuFree.NewFileMenuFreeExtension', 'com.louieyin.MacNewFile.MacNewFileFinderExtension']]
-    ft_item = 'com.danikk13.FinderToys.FinderToysExtension'
+    ft_item = 'com.atlant63.FinderToys.FinderToysExtension'
     if ft_item not in items:
         if 'com.apple.finder.SRCH' in items:
             idx = items.index('com.apple.finder.SRCH')

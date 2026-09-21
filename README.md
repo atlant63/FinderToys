@@ -12,11 +12,11 @@
 [![Architecture](https://img.shields.io/badge/Architecture-Apple%20Silicon%20%7C%20Intel-blue?style=flat-square)](#)
 [![License](https://img.shields.io/badge/License-GPL--3.0-green?style=flat-square)](./LICENSE)
 [![Size](https://img.shields.io/badge/DMG-942%20KB-success?style=flat-square)](#)
-[![GitHub Stars](https://img.shields.io/github/stars/Danikk13/FinderToys?style=flat-square&color=yellow)](https://github.com/Danikk13/FinderToys/stargazers)
+[![GitHub Stars](https://img.shields.io/github/stars/atlant63/FinderToys?style=flat-square&color=yellow)](https://github.com/atlant63/FinderToys/stargazers)
 
 <br/>
 
-### ⬇️ **[Download FinderToys.dmg (942 KB)](https://github.com/Danikk13/FinderToys/releases/download/v2.0.0/FinderToys.dmg)**
+### ⬇️ **[Download FinderToys.dmg (942 KB)](https://github.com/atlant63/FinderToys/releases/download/v2.0.0/FinderToys.dmg)**
 *(Free & Open Source for Apple Silicon M1/M2/M3/M4 & Intel)*
 
 </div>
@@ -34,11 +34,11 @@ Unlike heavy Electron alternatives, FinderToys is crafted with pure Objective-C 
 ### Option 1: One-Line Terminal Command (Fastest)
 Install and launch FinderToys in seconds without opening a browser:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Danikk13/FinderToys/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/atlant63/FinderToys/main/install.sh | bash
 ```
 
 ### Option 2: Drag-and-Drop DMG
-1. Download **[`FinderToys.dmg`](https://github.com/Danikk13/FinderToys/releases/download/v2.0.0/FinderToys.dmg)**.
+1. Download **[`FinderToys.dmg`](https://github.com/atlant63/FinderToys/releases/download/v2.0.0/FinderToys.dmg)**.
 2. Open the disk image and drag **FinderToys** to your **Applications** folder.
 3. Launch **FinderToys** from Applications or Spotlight.
 
@@ -128,7 +128,7 @@ No. FinderToys is written in native Objective-C with event tap filtering. It use
 Requirements: macOS 13.0+ and Apple Command Line Tools (`xcode-select --install`).
 
 ```bash
-git clone git@github.com:Danikk13/FinderToys.git
+git clone git@github.com:atlant63/FinderToys.git
 cd FinderToys
 ./build.sh -d -i
 ```

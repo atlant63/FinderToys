@@ -575,7 +575,7 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
         @"-e",
         enabled ? @"use" : @"ignore",
         @"-i",
-        @"com.danikk13.FinderToys.FinderToysExtension"
+        @"com.atlant63.FinderToys.FinderToysExtension"
     ];
     [task launch];
     [task waitUntilExit];
