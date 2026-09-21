@@ -1,0 +1,27 @@
+/* 
+  Localizable.strings
+  MacNewFileFinderExtension (Russian)
+*/
+
+/* Toolbar */
+"MacNewFileFinderExtension: Click the toolbar item for a menu." = "Новый файл: нажмите кнопку на панели инструментов для вызова меню.";
+
+/* Menu Items */
+"Copy Path" = "Скопировать путь";
+"Open New Terminal" = "Открыть терминал";
+"New File" = "Новый файл";
+"Text File" = "Текстовый документ (.txt)";
+"Markdown File" = "Файл Markdown (.md)";
+"JSON File" = "Файл JSON (.json)";
+"Microsoft Word Document" = "Документ Microsoft Word (.docx)";
+"Microsoft Excel Spreadsheet" = "Таблица Microsoft Excel (.xlsx)";
+"Microsoft PowerPoint Presentation" = "Презентация Microsoft PowerPoint (.pptx)";
+"Pages Document" = "Документ Pages";
+"Numbers Spreadsheet" = "Таблица Numbers";
+"Keynote Presentation" = "Презентация Keynote";
+
+/* File Names */
+"Untitled" = "Без названия";
+
+/* Errors */
+"Failed to open Terminal" = "Не удалось открыть терминал";

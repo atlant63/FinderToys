@@ -1,0 +1,11 @@
+/*
+  Localizable.strings
+  MacNewFile (Main App)
+*/
+
+/* Menu Bar App */
+"NF" = "NF";
+"MacNewFile is running" = "MacNewFile is running";
+"Enter to open in Finder (F2 to rename)" = "Enter to Open (Option+F2 / F2 to Rename)";
+"Paste Clipboard to file (⌘V)" = "Paste Clipboard to file (⌘V)";
+"Quit" = "Quit";

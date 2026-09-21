@@ -1,0 +1,19 @@
+# macOS                                                                                                                
+.DS_Store                                                                                                              
+                                                                                                                         
+# Xcode                                                                                                                
+build/                                                                                                                 
+DerivedData/                                                                                                           
+*.xcuserstate                                                                                                          
+xcuserdata/                                                                                                            
+                                                                                                                         
+# Documents                                                                                                            
+*.docx
+!MacNewFileFinderExtension/Blank.docx
+*.pdf         
+
+.claude
+
+/assets/MacNewFile Demo sped up.mp4
+/assets/MacNewFile Demo.mp4
+dist/
