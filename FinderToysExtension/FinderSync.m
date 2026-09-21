@@ -1,6 +1,6 @@
 //
 //  FinderSync.m
-//  MacNewFileFinderExtension
+//  FinderToysExtension
 //
 //  Created by Louie Yin on 2026-01-25.
 //
@@ -108,7 +108,7 @@ static inline NSString *FTLocalizedString(NSString *key) {
 }
 
 - (NSString *)toolbarItemToolTip {
-    return NSLocalizedString(@"MacNewFileFinderExtension: Click the toolbar item for a menu.", nil);
+    return NSLocalizedString(@"FinderToysExtension: Click the toolbar item for a menu.", nil);
 }
 
 - (NSImage *)toolbarItemImage {

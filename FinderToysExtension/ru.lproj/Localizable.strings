@@ -1,10 +1,10 @@
 /* 
   Localizable.strings
-  MacNewFileFinderExtension (Russian)
+  FinderToysExtension (Russian)
 */
 
 /* Toolbar */
-"MacNewFileFinderExtension: Click the toolbar item for a menu." = "Новый файл: нажмите кнопку на панели инструментов для вызова меню.";
+"FinderToysExtension: Click the toolbar item for a menu." = "Новый файл: нажмите кнопку на панели инструментов для вызова меню.";
 
 /* Menu Items */
 "Copy Path" = "Скопировать путь";

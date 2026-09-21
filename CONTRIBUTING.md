@@ -1,13 +1,13 @@
-# Contributing to MacNewFile
+# Contributing to FinderToys
 
-Thanks for your interest in contributing to MacNewFile!
+Thanks for your interest in contributing to FinderToys!
 
 ## Getting Started
 
 1. **Fork the repository** on GitHub
 2. **Clone your fork** locally:
    ```bash
-   git clone https://github.com/GarfieldFluffJr/MacNewFile.git
+   git clone https://github.com/GarfieldFluffJr/FinderToys.git
    ```
 3. **Open the project** in Xcode
 
@@ -46,7 +46,7 @@ Thanks for your interest in contributing to MacNewFile!
 
 ## Reporting Issues
 
-Found a bug or have a feature request? [Open an issue](https://github.com/GarfieldFluffJr/MacNewFile/issues) with:
+Found a bug or have a feature request? [Open an issue](https://github.com/GarfieldFluffJr/FinderToys/issues) with:
 
 - A clear description of the problem or feature
 - Steps to reproduce (for bugs)
@@ -54,4 +54,4 @@ Found a bug or have a feature request? [Open an issue](https://github.com/Garfie
 
 ## Questions?
 
-Feel free to reach out at **louieyin6@gmail.com**
+Feel free to reach out at **misterdanial228@gmail.com**

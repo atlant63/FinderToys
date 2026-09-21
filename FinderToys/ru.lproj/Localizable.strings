@@ -1,11 +1,11 @@
 /*
   Localizable.strings
-  MacNewFile (Russian)
+  FinderToys (Russian)
 */
 
 /* Menu Bar App */
-"NF" = "NF";
-"MacNewFile is running" = "MacNewFile запущен";
+"FT" = "FT";
+"FinderToys is running" = "FinderToys запущен";
 "Enter to open in Finder (F2 to rename)" = "Enter — открыть (Option+F2 / F2 — переименовать)";
 "Paste Clipboard to file (⌘V)" = "Вставка из буфера в файл (⌘V)";
 "Quit" = "Выйти";

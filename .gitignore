@@ -9,11 +9,11 @@ xcuserdata/
                                                                                                                          
 # Documents                                                                                                            
 *.docx
-!MacNewFileFinderExtension/Blank.docx
+!FinderToysExtension/Blank.docx
 *.pdf         
 
 .claude
 
-/assets/MacNewFile Demo sped up.mp4
-/assets/MacNewFile Demo.mp4
+/assets/FinderToys Demo sped up.mp4
+/assets/FinderToys Demo.mp4
 dist/

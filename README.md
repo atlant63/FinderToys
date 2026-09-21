@@ -86,7 +86,7 @@ Right-click anywhere in Finder or on Desktop:
 
 1. **Accessibility (for Enter to Open & F2 / ⌘V Hotkeys):**
    * Go to **System Settings** → **Privacy & Security** → **Accessibility**.
-   * Toggle **FinderToys** (or `MacNewFile`) to **ON**.
+   * Toggle **FinderToys**  to **ON**.
 2. **Finder Extension (for Context Menu):**
    * Go to **System Settings** → **General** → **Login Items & Extensions** → **Finder Extensions**.
    * Toggle **FinderToys Extension** to **ON**.
@@ -102,7 +102,7 @@ git clone git@github.com:Danikk13/FinderToys.git
 cd FinderToys
 ./build.sh -d -i
 ```
-* `-d`: Generates `dist/MacNewFile.dmg` installer.
+* `-d`: Generates `dist/FinderToys.dmg` installer.
 * `-i`: Installs and launches the application in `/Applications`.
 
 ---

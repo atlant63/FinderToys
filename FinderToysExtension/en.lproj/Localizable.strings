@@ -8,7 +8,7 @@
 
 
 /* Toolbar */
-"MacNewFileFinderExtension: Click the toolbar item for a menu." = "New File: Click the toolbar item for a menu.";
+"FinderToysExtension: Click the toolbar item for a menu." = "New File: Click the toolbar item for a menu.";
 
 /* Menu Items */
 "Copy Path" = "Copy Path";
