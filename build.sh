@@ -170,6 +170,13 @@ if [ "$DO_INSTALL" = true ]; then
 
     # Remove quarantine
     xattr -dr com.apple.quarantine "/Applications/FinderToys.app" 2>/dev/null || true
+    # Force Finder/Dock icon update
+    python3 -c "
+import Cocoa
+img = Cocoa.NSImage.alloc().initWithContentsOfFile_('/Applications/FinderToys.app/Contents/Resources/AppIcon.icns')
+if img:
+    Cocoa.NSWorkspace.sharedWorkspace().setIcon_forFile_options_(img, '/Applications/FinderToys.app', 0)
+" 2>/dev/null || true
 
     # Permanent registration
     /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "/Applications/FinderToys.app" 2>/dev/null || true
