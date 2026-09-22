@@ -209,4 +209,35 @@ if val is not None:
     killall Finder 2>/dev/null || true
     open "/Applications/FinderToys.app"
     echo "==> Installed and launched successfully!"
+
+    # Check Accessibility permission - prompt user if not granted
+    sleep 2
+    python3 - << 'PYCHECK'
+import subprocess, sys
+
+result = subprocess.run(
+    ['sqlite3', '-separator', '|',
+     '/Users/' + __import__('os').getenv('USER', 'userm4') + '/Library/Application Support/com.apple.TCC/TCC.db',
+     'SELECT auth_value FROM access WHERE service="kTCCServiceAccessibility" AND client="com.atlant63.FinderToys"'],
+    capture_output=True, text=True
+)
+granted = result.stdout.strip() == '2'  # 2 = allowed
+
+if not granted:
+    print("")
+    print("╔══════════════════════════════════════════════════════════╗")
+    print("║  ⚠️  Требуется разрешение Accessibility (одноразово)     ║")
+    print("║                                                          ║")
+    print("║  FinderToys нужен доступ к Accessibility для работы     ║")
+    print("║  ⌘V (вставка в файл), Enter (открыть), F2 (переименовать)║")
+    print("║                                                          ║")
+    print("║  Откроется: Системные настройки → Конфиденциальность     ║")
+    print("║  → Специальные возможности → ✅ FinderToys               ║")
+    print("╚══════════════════════════════════════════════════════════╝")
+    print("")
+    # Open Accessibility prefs
+    subprocess.run(['open', 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility'])
+else:
+    print("✅ Accessibility permission: already granted - all features active!")
+PYCHECK
 fi

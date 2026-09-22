@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-<dict/>
+<dict>
+	<!-- No sandbox: required for CGEventTap (Accessibility) to intercept keys system-wide -->
+	<!-- Accessibility is granted once by the user via System Settings > Privacy & Security > Accessibility -->
+	<!-- Apple Events permission is declared via NSAppleEventsUsageDescription in Info.plist -->
+</dict>
 </plist>

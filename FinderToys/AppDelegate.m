@@ -466,13 +466,6 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     [menu addItem:self.pasteClipboardMenuItem];
 
     [menu addItem:[NSMenuItem separatorItem]];
-
-    // Accessibility status item
-    self.accessibilityMenuItem = [[NSMenuItem alloc] initWithTitle:@"" action:nil keyEquivalent:@""];
-    [self updateAccessibilityMenuItemForTrusted:AXIsProcessTrusted()];
-    [menu addItem:self.accessibilityMenuItem];
-
-    [menu addItem:[NSMenuItem separatorItem]];
     [menu addItemWithTitle:NSLocalizedString(@"Quit", nil) action:@selector(terminate:) keyEquivalent:@"q"];
 
     self.statusItem.menu = menu;
@@ -525,11 +518,11 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
         // Tear down any stale tap
         [self tearDownEventTap];
 
-        // Prompt user to grant Accessibility in System Preferences
+        // Show system Accessibility prompt (кидает системный диалог)
         NSDictionary *options = @{(__bridge id)kAXTrustedCheckOptionPrompt: @YES};
         AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)options);
 
-        // Start polling every 1s until granted
+        // Poll until granted - then automatically activate EventTap without restart
         [self startAccessibilityPollingIfNeeded];
         return;
     }
