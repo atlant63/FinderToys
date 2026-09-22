@@ -42,6 +42,8 @@ static BOOL sIsSynthesizing = NO;
 @property (strong) NSStatusItem *statusItem;
 @property (strong) NSMenuItem *enterToOpenMenuItem;
 @property (strong) NSMenuItem *pasteClipboardMenuItem;
+@property (strong) NSMenuItem *accessibilityMenuItem;
+@property (strong) NSTimer *accessibilityPollTimer;
 
 + (BOOL)handlePasteInFinder;
 + (NSString *)currentFinderFolderPath;
@@ -464,6 +466,13 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     [menu addItem:self.pasteClipboardMenuItem];
 
     [menu addItem:[NSMenuItem separatorItem]];
+
+    // Accessibility status item
+    self.accessibilityMenuItem = [[NSMenuItem alloc] initWithTitle:@"" action:nil keyEquivalent:@""];
+    [self updateAccessibilityMenuItemForTrusted:AXIsProcessTrusted()];
+    [menu addItem:self.accessibilityMenuItem];
+
+    [menu addItem:[NSMenuItem separatorItem]];
     [menu addItemWithTitle:NSLocalizedString(@"Quit", nil) action:@selector(terminate:) keyEquivalent:@"q"];
 
     self.statusItem.menu = menu;
@@ -507,25 +516,27 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
 }
 
 - (void)setupEventTap {
-    if (sEventTap) {
-        CGEventTapEnable(sEventTap, true);
+    BOOL isTrusted = AXIsProcessTrusted();
+    NSLog(@"[FinderToys] setupEventTap: isTrusted = %d, sEventTap = %p", isTrusted, sEventTap);
+
+    [self updateAccessibilityMenuItemForTrusted:isTrusted];
+
+    if (!isTrusted) {
+        // Tear down any stale tap
+        [self tearDownEventTap];
+
+        // Prompt user to grant Accessibility in System Preferences
+        NSDictionary *options = @{(__bridge id)kAXTrustedCheckOptionPrompt: @YES};
+        AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)options);
+
+        // Start polling every 1s until granted
+        [self startAccessibilityPollingIfNeeded];
         return;
     }
 
-    NSDictionary *options = @{(__bridge id)kAXTrustedCheckOptionPrompt: @YES};
-    BOOL isTrusted = AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)options);
-    NSLog(@"[FinderToys] setupEventTap: isTrusted = %d", isTrusted);
-
-    if (!isTrusted) {
-        // Poll every 1 second until user grants permission
-        NSTimer *timer = [NSTimer timerWithTimeInterval:1.0 repeats:YES block:^(NSTimer * _Nonnull t) {
-            if (AXIsProcessTrusted()) {
-                NSLog(@"[FinderToys] Accessibility permission granted via poll!");
-                [t invalidate];
-                [self setupEventTap];
-            }
-        }];
-        [[NSRunLoop currentRunLoop] addTimer:timer forMode:NSRunLoopCommonModes];
+    // Already trusted: ensure tap is live
+    if (sEventTap) {
+        CGEventTapEnable(sEventTap, true);
         return;
     }
 
@@ -548,12 +559,13 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     CFRunLoopAddSource(CFRunLoopGetMain(), sRunLoopSource, kCFRunLoopCommonModes);
     CGEventTapEnable(sEventTap, true);
     NSLog(@"[FinderToys] Event tap successfully enabled for Finder Enter/F2/Cmd+V!");
+
+    // Stop any pending polling timer
+    [self.accessibilityPollTimer invalidate];
+    self.accessibilityPollTimer = nil;
 }
 
-- (void)applicationWillTerminate:(NSNotification *)aNotification {
-    // Restore default key mappings
-    [AppDelegate enableF2KeyMapping:NO];
-
+- (void)tearDownEventTap {
     if (sEventTap) {
         CGEventTapEnable(sEventTap, false);
         if (sRunLoopSource) {
@@ -564,6 +576,53 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
         CFRelease(sEventTap);
         sEventTap = NULL;
     }
+}
+
+- (void)startAccessibilityPollingIfNeeded {
+    if (self.accessibilityPollTimer && self.accessibilityPollTimer.isValid) {
+        return; // already polling
+    }
+    __weak typeof(self) weakSelf = self;
+    self.accessibilityPollTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES block:^(NSTimer * _Nonnull t) {
+        if (AXIsProcessTrusted()) {
+            NSLog(@"[FinderToys] Accessibility permission granted!");
+            [t invalidate];
+            weakSelf.accessibilityPollTimer = nil;
+            [weakSelf setupEventTap];
+        }
+    }];
+}
+
+- (void)updateAccessibilityMenuItemForTrusted:(BOOL)trusted {
+    if (!self.accessibilityMenuItem) return;
+    if (trusted) {
+        self.accessibilityMenuItem.title = NSLocalizedString(@"✅ Accessibility: Granted", nil);
+        self.accessibilityMenuItem.action = nil;
+        self.accessibilityMenuItem.target = nil;
+    } else {
+        self.accessibilityMenuItem.title = NSLocalizedString(@"⚠️ Grant Accessibility Access…", nil);
+        self.accessibilityMenuItem.action = @selector(openAccessibilityPrefs:);
+        self.accessibilityMenuItem.target = self;
+    }
+}
+
+- (void)openAccessibilityPrefs:(id)sender {
+    // Prompt the system dialog again, then open System Preferences
+    NSDictionary *options = @{(__bridge id)kAXTrustedCheckOptionPrompt: @YES};
+    AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef)options);
+    [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:@"x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"]];
+    [self startAccessibilityPollingIfNeeded];
+}
+
+- (void)applicationWillTerminate:(NSNotification *)aNotification {
+    // Restore default key mappings
+    [AppDelegate enableF2KeyMapping:NO];
+
+    [self.accessibilityPollTimer invalidate];
+    self.accessibilityPollTimer = nil;
+
+    [self tearDownEventTap];
+
     // Disable the Finder extension when app quits
     [self setExtensionEnabled:NO];
 }

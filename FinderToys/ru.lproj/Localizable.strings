@@ -9,3 +9,5 @@
 "Enter to open in Finder (F2 to rename)" = "Enter — открыть (Option+F2 / F2 — переименовать)";
 "Paste Clipboard to file (⌘V)" = "Вставка из буфера в файл (⌘V)";
 "Quit" = "Выйти";
+"✅ Accessibility: Granted" = "✅ Доступ к специальным возможностям: разрешён";
+"⚠️ Grant Accessibility Access…" = "⚠️ Разрешить доступ к специальным возможностям…";
