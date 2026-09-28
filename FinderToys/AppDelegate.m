@@ -493,7 +493,7 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     [menu addItem:self.imageConversionMenuItem];
 
     // Toggle for PDF Tools
-    self.pdfToolsMenuItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"PDF Tools (Merge / Compress)", nil)
+    self.pdfToolsMenuItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"PDF Tools (Merge into PDF)", nil)
                                                        action:@selector(togglePDFTools:)
                                                 keyEquivalent:@""];
     self.pdfToolsMenuItem.target = self;

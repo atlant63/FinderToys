@@ -26,15 +26,53 @@ static inline NSSet<NSString *> *FTImageExtensions(void) {
     return set;
 }
 
-static inline NSImage *FTSymbolImage(NSString *name) {
-    if (@available(macOS 11.0, *)) {
-        NSImage *img = [NSImage imageWithSystemSymbolName:name accessibilityDescription:nil];
-        if (img) {
-            img.template = YES;
-            return img;
+static NSImage *FTSymbolImage(NSString *name) {
+    BOOL isDark = NO;
+    CFStringRef style = (CFStringRef)CFPreferencesCopyAppValue((CFStringRef)@"AppleInterfaceStyle", kCFPreferencesAnyApplication);
+    if (style) {
+        if ([(__bridge NSString *)style isEqualToString:@"Dark"]) {
+            isDark = YES;
+        }
+        CFRelease(style);
+    } else if (@available(macOS 10.14, *)) {
+        NSAppearanceName match = [[NSApp effectiveAppearance] bestMatchFromAppearancesWithNames:@[NSAppearanceNameAqua, NSAppearanceNameDarkAqua]];
+        if ([match isEqualToString:NSAppearanceNameDarkAqua]) {
+            isDark = YES;
         }
     }
-    return nil;
+
+    NSColor *tintColor = isDark ? [NSColor whiteColor] : [NSColor colorWithWhite:0.15 alpha:1.0];
+
+    NSImage *sym = nil;
+    if (@available(macOS 11.0, *)) {
+        NSImageSymbolConfiguration *config = [NSImageSymbolConfiguration configurationWithPointSize:14 weight:NSFontWeightMedium];
+        if (@available(macOS 12.0, *)) {
+            NSImageSymbolConfiguration *colorConfig = [NSImageSymbolConfiguration configurationWithHierarchicalColor:tintColor];
+            config = [config configurationByApplyingConfiguration:colorConfig];
+        }
+        sym = [NSImage imageWithSystemSymbolName:name accessibilityDescription:nil];
+        if (sym) {
+            sym = [sym imageWithSymbolConfiguration:config];
+        }
+    }
+    if (!sym) return nil;
+
+    NSImage *result = [NSImage imageWithSize:NSMakeSize(18, 18) flipped:NO drawingHandler:^BOOL(NSRect dstRect) {
+        CGFloat w = sym.size.width;
+        CGFloat h = sym.size.height;
+        if (w > 18) { h = h * (18.0 / w); w = 18; }
+        if (h > 18) { h = h * (18.0 / h); h = 18; }
+        NSRect r = NSMakeRect((18.0 - w) / 2.0, (18.0 - h) / 2.0, w, h);
+        [tintColor set];
+        [sym drawInRect:r fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:1.0];
+        return YES;
+    }];
+
+    CGImageRef cg = [result CGImageForProposedRect:NULL context:nil hints:nil];
+    if (cg) {
+        return [[NSImage alloc] initWithCGImage:cg size:NSMakeSize(18, 18)];
+    }
+    return result;
 }
 
 static inline NSString *FTLocalizedString(NSString *key) {
@@ -231,10 +269,6 @@ static inline NSString *FTLocalizedString(NSString *key) {
             heicItem.image = FTSymbolImage(@"photo");
             [convSubmenu addItem:heicItem];
 
-            NSMenuItem *compressImgItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Compress Image", nil) action:@selector(compressSelectedImages:) keyEquivalent:@""];
-            compressImgItem.image = FTSymbolImage(@"arrow.down.doc");
-            [convSubmenu addItem:compressImgItem];
-
             NSMenuItem *convMainItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Convert", nil) action:nil keyEquivalent:@""];
             convMainItem.image = FTSymbolImage(@"arrow.triangle.2.circlepath");
             convMainItem.submenu = convSubmenu;
@@ -243,12 +277,7 @@ static inline NSString *FTLocalizedString(NSString *key) {
 
         // B. PDF Actions
         if (isPDFToolsEnabled) {
-            if (pdfURLs.count == 1 && imageURLs.count == 0) {
-                // Single PDF: Compress PDF
-                NSMenuItem *compressPDFItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Compress PDF", nil) action:@selector(compressSelectedPDF:) keyEquivalent:@""];
-                compressPDFItem.image = FTSymbolImage(@"arrow.down.doc");
-                [menu addItem:compressPDFItem];
-            } else if (pdfURLs.count >= 2 && imageURLs.count == 0) {
+            if (pdfURLs.count >= 2 && imageURLs.count == 0) {
                 // Multiple PDFs: Merge PDFs
                 NSMenuItem *mergePDFItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Merge PDFs", nil) action:@selector(combineSelectedIntoPDF:) keyEquivalent:@""];
                 mergePDFItem.image = FTSymbolImage(@"doc.on.doc");
