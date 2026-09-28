@@ -33,6 +33,7 @@ static NSString * const kEnterToOpenDefaultsKey = @"EnterToOpenInFinder";
 static NSString * const kPasteClipboardDefaultsKey = @"PasteClipboardToFileInFinder";
 static NSString * const kImageConversionDefaultsKey = @"ImageConversionInFinder";
 static NSString * const kPDFToolsDefaultsKey = @"PDFToolsInFinder";
+static NSString * const kTrashOriginalsDefaultsKey = @"TrashOriginalsAfterConversionInFinder";
 #define FT_SYNTHETIC_TAG 0x465453 // 'MNF'
 
 static CFMachPortRef sEventTap = NULL;
@@ -46,6 +47,7 @@ static BOOL sIsSynthesizing = NO;
 @property (strong) NSMenuItem *pasteClipboardMenuItem;
 @property (strong) NSMenuItem *imageConversionMenuItem;
 @property (strong) NSMenuItem *pdfToolsMenuItem;
+@property (strong) NSMenuItem *trashOriginalsMenuItem;
 @property (strong) NSMenuItem *accessibilityMenuItem;
 @property (strong) NSTimer *accessibilityPollTimer;
 
@@ -492,6 +494,14 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     self.imageConversionMenuItem.state = [AppDelegate isFeatureEnabled:kImageConversionDefaultsKey defaultVal:YES] ? NSControlStateValueOn : NSControlStateValueOff;
     [menu addItem:self.imageConversionMenuItem];
 
+    // Toggle for Trash Originals after conversion
+    self.trashOriginalsMenuItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Move original to Trash after conversion", nil)
+                                                             action:@selector(toggleTrashOriginals:)
+                                                      keyEquivalent:@""];
+    self.trashOriginalsMenuItem.target = self;
+    self.trashOriginalsMenuItem.state = [AppDelegate isFeatureEnabled:kTrashOriginalsDefaultsKey defaultVal:YES] ? NSControlStateValueOn : NSControlStateValueOff;
+    [menu addItem:self.trashOriginalsMenuItem];
+
     // Toggle for PDF Tools
     self.pdfToolsMenuItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"PDF Tools (Merge into PDF)", nil)
                                                        action:@selector(togglePDFTools:)
@@ -555,6 +565,13 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     BOOL newSetting = !current;
     [AppDelegate setFeatureEnabled:newSetting forKey:kPDFToolsDefaultsKey];
     self.pdfToolsMenuItem.state = newSetting ? NSControlStateValueOn : NSControlStateValueOff;
+}
+
+- (void)toggleTrashOriginals:(id)sender {
+    BOOL current = [AppDelegate isFeatureEnabled:kTrashOriginalsDefaultsKey defaultVal:YES];
+    BOOL newSetting = !current;
+    [AppDelegate setFeatureEnabled:newSetting forKey:kTrashOriginalsDefaultsKey];
+    self.trashOriginalsMenuItem.state = newSetting ? NSControlStateValueOn : NSControlStateValueOff;
 }
 
 

@@ -275,16 +275,15 @@ static inline NSString *FTLocalizedString(NSString *key) {
             [menu addItem:convMainItem];
         }
 
-        // B. PDF Actions
+        // B. PDF Actions (Only show when 2 or more files are selected!)
         if (isPDFToolsEnabled) {
-            if (pdfURLs.count >= 2 && imageURLs.count == 0) {
-                // Multiple PDFs: Merge PDFs
-                NSMenuItem *mergePDFItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Merge PDFs", nil) action:@selector(combineSelectedIntoPDF:) keyEquivalent:@""];
-                mergePDFItem.image = FTSymbolImage(@"doc.on.doc");
-                [menu addItem:mergePDFItem];
-            } else if (imageURLs.count > 0) {
-                // Images selected (or combination): Combine into PDF
-                NSMenuItem *combinePDFItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Combine into PDF", nil) action:@selector(combineSelectedIntoPDF:) keyEquivalent:@""];
+            NSUInteger totalCount = imageURLs.count + pdfURLs.count;
+            if (totalCount >= 2) {
+                NSString *title = (pdfURLs.count == totalCount) ?
+                    NSLocalizedString(@"Merge PDFs", nil) :
+                    NSLocalizedString(@"Combine into PDF", nil);
+
+                NSMenuItem *combinePDFItem = [[NSMenuItem alloc] initWithTitle:title action:@selector(combineSelectedIntoPDF:) keyEquivalent:@""];
                 combinePDFItem.image = FTSymbolImage(@"doc.on.doc");
                 [menu addItem:combinePDFItem];
             }
@@ -946,7 +945,10 @@ static inline NSString *FTLocalizedString(NSString *key) {
     NSArray<NSURL *> *selectedURLs = [[FIFinderSyncController defaultController] selectedItemURLs];
     if (selectedURLs.count == 0) return;
 
+    BOOL trashOriginals = FTIsPreferenceEnabled(@"TrashOriginalsAfterConversionInFinder", YES);
     NSMutableArray<NSURL *> *createdURLs = [NSMutableArray array];
+    NSMutableArray<NSURL *> *trashedURLs = [NSMutableArray array];
+
     for (NSURL *sourceURL in selectedURLs) {
         NSString *sourceExt = sourceURL.pathExtension.lowercaseString;
         if (![FTImageExtensions() containsObject:sourceExt]) continue;
@@ -955,7 +957,17 @@ static inline NSString *FTLocalizedString(NSString *key) {
         if ([FinderSync convertImageAtURL:sourceURL toType:destType outputExtension:ext createdURL:&outURL quality:quality]) {
             if (outURL) {
                 [createdURLs addObject:outURL];
+                if (trashOriginals && ![sourceURL.path isEqualToString:outURL.path]) {
+                    [trashedURLs addObject:sourceURL];
+                }
             }
+        }
+    }
+
+    // Move successfully converted originals to Trash
+    if (trashedURLs.count > 0) {
+        for (NSURL *u in trashedURLs) {
+            [[NSFileManager defaultManager] trashItemAtURL:u resultingItemURL:nil error:nil];
         }
     }
 
