@@ -1049,9 +1049,8 @@ static inline NSString *FTLocalizedString(NSString *key) {
         }
     }
 
-    if (createdURLs.count > 0) {
-        [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:createdURLs];
-    }
+    // converted files created silently — no Finder activation
+    (void)createdURLs;
 }
 
 - (void)combineSelectedIntoPDF:(id)sender {
@@ -1064,9 +1063,8 @@ static inline NSString *FTLocalizedString(NSString *key) {
     }
 
     NSURL *createdPDF = [FinderSync createPDFFromItems:selectedURLs inDirectory:targetDir.path];
-    if (createdPDF) {
-        [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[createdPDF]];
-    }
+    // PDF created silently — no Finder activation
+    (void)createdPDF;
 }
 
 - (void)compressSelectedPDF:(id)sender {
@@ -1081,9 +1079,8 @@ static inline NSString *FTLocalizedString(NSString *key) {
             [createdURLs addObject:compressed];
         }
     }
-    if (createdURLs.count > 0) {
-        [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:createdURLs];
-    }
+    // compressed silently — no Finder activation
+    (void)createdURLs;
 }
 
 
@@ -1214,9 +1211,8 @@ static inline NSString *FTLocalizedString(NSString *key) {
             [[NSFileManager defaultManager] trashItemAtURL:u resultingItemURL:nil error:nil];
         }
         if (createdURLs.count > 0) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:[createdURLs copy]];
-            });
+            // video converted silently — no Finder activation
+        (void)createdURLs;
         }
     });
 }
