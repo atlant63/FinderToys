@@ -1130,11 +1130,197 @@ static inline NSString *FTLocalizedString(NSString *key) {
     }];
 }
 
+// Real compression via AVAssetWriter — explicit H.264 bitrate control
+// Equivalent to: ffmpeg -c:v libx264 -preset fast -crf 22 -c:a aac -b:a 128k
++ (void)compressVideoWithAssetWriter:(NSURL *)sourceURL
+                    completionHandler:(void (^)(NSURL *outURL, NSError *error))completion {
+
+    AVURLAsset *asset = [AVURLAsset URLAssetWithURL:sourceURL options:nil];
+    NSString *dir = sourceURL.URLByDeletingLastPathComponent.path;
+    NSString *base = [sourceURL.lastPathComponent stringByDeletingPathExtension];
+    NSString *outPath = [FinderSync uniqueVideoPathInDirectory:dir baseName:[base stringByAppendingString:@"_compressed"] extension:@"mp4"];
+    NSURL *outURL = [NSURL fileURLWithPath:outPath];
+
+    // Load tracks
+    // Use loadValuesAsynchronouslyForKeys to avoid deprecated synchronous track loading on macOS 15+
+    dispatch_semaphore_t loadSem = dispatch_semaphore_create(0);
+    [asset loadValuesAsynchronouslyForKeys:@[@"tracks"] completionHandler:^{ dispatch_semaphore_signal(loadSem); }];
+    dispatch_semaphore_wait(loadSem, DISPATCH_TIME_FOREVER);
+
+    NSError *trackError = nil;
+    AVKeyValueStatus status = [asset statusOfValueForKey:@"tracks" error:&trackError];
+    if (status != AVKeyValueStatusLoaded) {
+        completion(nil, trackError ?: [NSError errorWithDomain:@"FinderToys" code:3 userInfo:@{NSLocalizedDescriptionKey: @"Failed to load asset tracks"}]);
+        return;
+    }
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    AVAssetTrack *videoTrack = [[asset tracksWithMediaType:AVMediaTypeVideo] firstObject];
+    AVAssetTrack *audioTrack = [[asset tracksWithMediaType:AVMediaTypeAudio] firstObject];
+#pragma clang diagnostic pop
+
+    if (!videoTrack) {
+        completion(nil, [NSError errorWithDomain:@"FinderToys" code:2 userInfo:@{NSLocalizedDescriptionKey: @"No video track found"}]);
+        return;
+    }
+
+    // ---- Determine target bitrate ----
+    // Adaptive: ~6 Mbps for 1080p, scales with pixel count (mirrors CRF 22 libx264)
+    CGSize naturalSize = videoTrack.naturalSize;
+    CGAffineTransform t = videoTrack.preferredTransform;
+    CGSize displaySize = CGSizeApplyAffineTransform(naturalSize, t);
+    CGFloat w = ABS(displaySize.width);
+    CGFloat h = ABS(displaySize.height);
+    if (w == 0 || h == 0) { w = naturalSize.width; h = naturalSize.height; }
+
+    CGFloat megapixels = (w * h) / 1000000.0;
+    // 6 Mbps @ 2.07 MP (1080p), linear scale clamped to 2–40 Mbps
+    NSInteger videoBitrate = (NSInteger)MAX(2000000, MIN(40000000, megapixels * 2896000));
+
+    NSDictionary *videoSettings = @{
+        AVVideoCodecKey: AVVideoCodecTypeH264,
+        AVVideoWidthKey: @(naturalSize.width),
+        AVVideoHeightKey: @(naturalSize.height),
+        AVVideoCompressionPropertiesKey: @{
+            AVVideoAverageBitRateKey: @(videoBitrate),
+            AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel,
+            AVVideoH264EntropyModeKey: AVVideoH264EntropyModeCABAC,
+            AVVideoMaxKeyFrameIntervalKey: @60,
+            AVVideoAllowFrameReorderingKey: @YES,
+        }
+    };
+
+    NSDictionary *audioSettings = @{
+        AVFormatIDKey: @(kAudioFormatMPEG4AAC),
+        AVSampleRateKey: @44100,
+        AVNumberOfChannelsKey: @2,
+        AVEncoderBitRateKey: @128000,
+    };
+
+    // ---- Setup reader ----
+    NSError *readerError = nil;
+    AVAssetReader *reader = [AVAssetReader assetReaderWithAsset:asset error:&readerError];
+    if (!reader) { completion(nil, readerError); return; }
+
+    AVAssetReaderTrackOutput *videoOutput = [AVAssetReaderTrackOutput
+        assetReaderTrackOutputWithTrack:videoTrack
+        outputSettings:@{(NSString *)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)}];
+    videoOutput.alwaysCopiesSampleData = NO;
+    [reader addOutput:videoOutput];
+
+    AVAssetReaderTrackOutput *audioOutput = nil;
+    if (audioTrack) {
+        audioOutput = [AVAssetReaderTrackOutput
+            assetReaderTrackOutputWithTrack:audioTrack
+            outputSettings:@{AVFormatIDKey: @(kAudioFormatLinearPCM)}];
+        audioOutput.alwaysCopiesSampleData = NO;
+        [reader addOutput:audioOutput];
+    }
+
+    // ---- Setup writer ----
+    NSError *writerError = nil;
+    AVAssetWriter *writer = [AVAssetWriter assetWriterWithURL:outURL fileType:AVFileTypeMPEG4 error:&writerError];
+    if (!writer) { completion(nil, writerError); return; }
+    writer.shouldOptimizeForNetworkUse = YES; // -movflags +faststart
+
+    AVAssetWriterInput *videoInput = [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeVideo outputSettings:videoSettings];
+    videoInput.transform = videoTrack.preferredTransform;
+    videoInput.expectsMediaDataInRealTime = NO;
+    [writer addInput:videoInput];
+
+    AVAssetWriterInput *audioInput = nil;
+    if (audioTrack) {
+        audioInput = [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeAudio outputSettings:audioSettings];
+        audioInput.expectsMediaDataInRealTime = NO;
+        [writer addInput:audioInput];
+    }
+
+    [reader startReading];
+    [writer startWriting];
+    [writer startSessionAtSourceTime:kCMTimeZero];
+
+    dispatch_queue_t videoQ = dispatch_queue_create("com.findertoys.video.compress.video", DISPATCH_QUEUE_SERIAL);
+    dispatch_queue_t audioQ = dispatch_queue_create("com.findertoys.video.compress.audio", DISPATCH_QUEUE_SERIAL);
+    dispatch_group_t group = dispatch_group_create();
+
+    // Write video
+    dispatch_group_enter(group);
+    [videoInput requestMediaDataWhenReadyOnQueue:videoQ usingBlock:^{
+        while (videoInput.isReadyForMoreMediaData) {
+            CMSampleBufferRef sample = [videoOutput copyNextSampleBuffer];
+            if (sample) {
+                [videoInput appendSampleBuffer:sample];
+                CFRelease(sample);
+            } else {
+                [videoInput markAsFinished];
+                dispatch_group_leave(group);
+                return;
+            }
+        }
+    }];
+
+    // Write audio
+    if (audioInput && audioOutput) {
+        dispatch_group_enter(group);
+        [audioInput requestMediaDataWhenReadyOnQueue:audioQ usingBlock:^{
+            while (audioInput.isReadyForMoreMediaData) {
+                CMSampleBufferRef sample = [audioOutput copyNextSampleBuffer];
+                if (sample) {
+                    [audioInput appendSampleBuffer:sample];
+                    CFRelease(sample);
+                } else {
+                    [audioInput markAsFinished];
+                    dispatch_group_leave(group);
+                    return;
+                }
+            }
+        }];
+    }
+
+    dispatch_group_notify(group, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        [writer finishWritingWithCompletionHandler:^{
+            if (writer.status == AVAssetWriterStatusCompleted) {
+                completion(outURL, nil);
+            } else {
+                [[NSFileManager defaultManager] removeItemAtURL:outURL error:nil];
+                completion(nil, writer.error);
+            }
+        }];
+    });
+}
+
 - (void)compressSelectedVideos:(id)sender {
-    [self processSelectedVideosWithPreset:AVAssetExportPreset1920x1080
-                               fileType:AVFileTypeMPEG4
-                              extension:@"mp4"
-                                 suffix:@"_compressed"];
+    NSArray<NSURL *> *selectedURLs = [[FIFinderSyncController defaultController] selectedItemURLs];
+    if (selectedURLs.count == 0) return;
+
+    BOOL trashOriginals = FTIsPreferenceEnabled(@"TrashOriginalsAfterConversionInFinder", YES);
+    NSMutableArray<NSURL *> *videoURLs = [NSMutableArray array];
+    for (NSURL *url in selectedURLs) {
+        if ([FTVideoExtensions() containsObject:url.pathExtension.lowercaseString]) {
+            [videoURLs addObject:url];
+        }
+    }
+    if (videoURLs.count == 0) return;
+
+    dispatch_group_t group = dispatch_group_create();
+    NSMutableArray<NSURL *> *toTrash = [NSMutableArray array];
+
+    for (NSURL *sourceURL in videoURLs) {
+        dispatch_group_enter(group);
+        [FinderSync compressVideoWithAssetWriter:sourceURL completionHandler:^(NSURL *outURL, NSError *error) {
+            if (outURL && trashOriginals) {
+                @synchronized(toTrash) { [toTrash addObject:sourceURL]; }
+            }
+            dispatch_group_leave(group);
+        }];
+    }
+
+    dispatch_group_notify(group, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        for (NSURL *u in toTrash) {
+            [[NSFileManager defaultManager] trashItemAtURL:u resultingItemURL:nil error:nil];
+        }
+    });
 }
 
 - (void)convertSelectedVideosToMP4:(id)sender {
