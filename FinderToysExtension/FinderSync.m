@@ -26,6 +26,17 @@ static inline NSSet<NSString *> *FTImageExtensions(void) {
     return set;
 }
 
+static inline NSImage *FTSymbolImage(NSString *name) {
+    if (@available(macOS 11.0, *)) {
+        NSImage *img = [NSImage imageWithSystemSymbolName:name accessibilityDescription:nil];
+        if (img) {
+            img.template = YES;
+            return img;
+        }
+    }
+    return nil;
+}
+
 static inline NSString *FTLocalizedString(NSString *key) {
     static NSBundle *bundle = nil;
     static dispatch_once_t onceToken;
@@ -209,35 +220,23 @@ static inline NSString *FTLocalizedString(NSString *key) {
             NSMenu *convSubmenu = [[NSMenu alloc] initWithTitle:@""];
 
             NSMenuItem *pngItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"to PNG", nil) action:@selector(convertSelectedImagesToPNG:) keyEquivalent:@""];
-            if (@available(macOS 11.0, *)) {
-                pngItem.image = [NSImage imageWithSystemSymbolName:@"photo" accessibilityDescription:nil];
-            }
+            pngItem.image = FTSymbolImage(@"photo");
             [convSubmenu addItem:pngItem];
 
             NSMenuItem *jpegItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"to JPEG", nil) action:@selector(convertSelectedImagesToJPEG:) keyEquivalent:@""];
-            if (@available(macOS 11.0, *)) {
-                jpegItem.image = [NSImage imageWithSystemSymbolName:@"photo" accessibilityDescription:nil];
-            }
+            jpegItem.image = FTSymbolImage(@"photo");
             [convSubmenu addItem:jpegItem];
 
             NSMenuItem *heicItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"to HEIC", nil) action:@selector(convertSelectedImagesToHEIC:) keyEquivalent:@""];
-            if (@available(macOS 11.0, *)) {
-                heicItem.image = [NSImage imageWithSystemSymbolName:@"photo" accessibilityDescription:nil];
-            }
+            heicItem.image = FTSymbolImage(@"photo");
             [convSubmenu addItem:heicItem];
 
-            [convSubmenu addItem:[NSMenuItem separatorItem]];
-
             NSMenuItem *compressImgItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Compress Image", nil) action:@selector(compressSelectedImages:) keyEquivalent:@""];
-            if (@available(macOS 11.0, *)) {
-                compressImgItem.image = [NSImage imageWithSystemSymbolName:@"arrow.down.doc" accessibilityDescription:nil];
-            }
+            compressImgItem.image = FTSymbolImage(@"arrow.down.doc");
             [convSubmenu addItem:compressImgItem];
 
             NSMenuItem *convMainItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Convert", nil) action:nil keyEquivalent:@""];
-            if (@available(macOS 11.0, *)) {
-                convMainItem.image = [NSImage imageWithSystemSymbolName:@"arrow.triangle.2.circlepath" accessibilityDescription:nil];
-            }
+            convMainItem.image = FTSymbolImage(@"arrow.triangle.2.circlepath");
             convMainItem.submenu = convSubmenu;
             [menu addItem:convMainItem];
         }
@@ -247,23 +246,17 @@ static inline NSString *FTLocalizedString(NSString *key) {
             if (pdfURLs.count == 1 && imageURLs.count == 0) {
                 // Single PDF: Compress PDF
                 NSMenuItem *compressPDFItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Compress PDF", nil) action:@selector(compressSelectedPDF:) keyEquivalent:@""];
-                if (@available(macOS 11.0, *)) {
-                    compressPDFItem.image = [NSImage imageWithSystemSymbolName:@"arrow.down.doc" accessibilityDescription:nil];
-                }
+                compressPDFItem.image = FTSymbolImage(@"arrow.down.doc");
                 [menu addItem:compressPDFItem];
             } else if (pdfURLs.count >= 2 && imageURLs.count == 0) {
                 // Multiple PDFs: Merge PDFs
                 NSMenuItem *mergePDFItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Merge PDFs", nil) action:@selector(combineSelectedIntoPDF:) keyEquivalent:@""];
-                if (@available(macOS 11.0, *)) {
-                    mergePDFItem.image = [NSImage imageWithSystemSymbolName:@"doc.on.doc" accessibilityDescription:nil];
-                }
+                mergePDFItem.image = FTSymbolImage(@"doc.on.doc");
                 [menu addItem:mergePDFItem];
             } else if (imageURLs.count > 0) {
                 // Images selected (or combination): Combine into PDF
                 NSMenuItem *combinePDFItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Combine into PDF", nil) action:@selector(combineSelectedIntoPDF:) keyEquivalent:@""];
-                if (@available(macOS 11.0, *)) {
-                    combinePDFItem.image = [NSImage imageWithSystemSymbolName:@"doc.on.doc" accessibilityDescription:nil];
-                }
+                combinePDFItem.image = FTSymbolImage(@"doc.on.doc");
                 [menu addItem:combinePDFItem];
             }
         }
