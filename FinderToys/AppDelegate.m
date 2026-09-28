@@ -34,6 +34,7 @@ static NSString * const kPasteClipboardDefaultsKey = @"PasteClipboardToFileInFin
 static NSString * const kImageConversionDefaultsKey = @"ImageConversionInFinder";
 static NSString * const kPDFToolsDefaultsKey = @"PDFToolsInFinder";
 static NSString * const kTrashOriginalsDefaultsKey = @"TrashOriginalsAfterConversionInFinder";
+static NSString * const kVideoConversionDefaultsKey = @"VideoConversionInFinder";
 #define FT_SYNTHETIC_TAG 0x465453 // 'MNF'
 
 static CFMachPortRef sEventTap = NULL;
@@ -48,6 +49,7 @@ static BOOL sIsSynthesizing = NO;
 @property (strong) NSMenuItem *imageConversionMenuItem;
 @property (strong) NSMenuItem *pdfToolsMenuItem;
 @property (strong) NSMenuItem *trashOriginalsMenuItem;
+@property (strong) NSMenuItem *videoConversionMenuItem;
 @property (strong) NSMenuItem *accessibilityMenuItem;
 @property (strong) NSTimer *accessibilityPollTimer;
 
@@ -510,6 +512,14 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     self.pdfToolsMenuItem.state = [AppDelegate isFeatureEnabled:kPDFToolsDefaultsKey defaultVal:YES] ? NSControlStateValueOn : NSControlStateValueOff;
     [menu addItem:self.pdfToolsMenuItem];
 
+    // Toggle for Video Conversion
+    self.videoConversionMenuItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Video Compression & Conversion", nil)
+                                                              action:@selector(toggleVideoConversion:)
+                                                       keyEquivalent:@""];
+    self.videoConversionMenuItem.target = self;
+    self.videoConversionMenuItem.state = [AppDelegate isFeatureEnabled:kVideoConversionDefaultsKey defaultVal:YES] ? NSControlStateValueOn : NSControlStateValueOff;
+    [menu addItem:self.videoConversionMenuItem];
+
     [menu addItem:[NSMenuItem separatorItem]];
     [menu addItemWithTitle:NSLocalizedString(@"Quit", nil) action:@selector(terminate:) keyEquivalent:@"q"];
 
@@ -572,6 +582,13 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     BOOL newSetting = !current;
     [AppDelegate setFeatureEnabled:newSetting forKey:kTrashOriginalsDefaultsKey];
     self.trashOriginalsMenuItem.state = newSetting ? NSControlStateValueOn : NSControlStateValueOff;
+}
+
+- (void)toggleVideoConversion:(id)sender {
+    BOOL current = [AppDelegate isFeatureEnabled:kVideoConversionDefaultsKey defaultVal:YES];
+    BOOL newSetting = !current;
+    [AppDelegate setFeatureEnabled:newSetting forKey:kVideoConversionDefaultsKey];
+    self.videoConversionMenuItem.state = newSetting ? NSControlStateValueOn : NSControlStateValueOff;
 }
 
 

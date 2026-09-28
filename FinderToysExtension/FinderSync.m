@@ -9,6 +9,7 @@
 #import <ImageIO/ImageIO.h>
 #import <PDFKit/PDFKit.h>
 #import <Quartz/Quartz.h>
+#import <AVFoundation/AVFoundation.h>
 
 static inline BOOL FTIsPreferenceEnabled(NSString *key, BOOL defaultVal) {
     CFPreferencesAppSynchronize(CFSTR("com.atlant63.FinderToys"));
@@ -22,6 +23,15 @@ static inline NSSet<NSString *> *FTImageExtensions(void) {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         set = [NSSet setWithObjects:@"png", @"jpg", @"jpeg", @"webp", @"heic", @"heif", @"tiff", @"tif", @"bmp", @"gif", nil];
+    });
+    return set;
+}
+
+static inline NSSet<NSString *> *FTVideoExtensions(void) {
+    static NSSet *set = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        set = [NSSet setWithObjects:@"mp4", @"mov", @"m4v", @"avi", @"mkv", @"wmv", @"webm", @"flv", nil];
     });
     return set;
 }
@@ -241,17 +251,21 @@ static inline NSString *FTLocalizedString(NSString *key) {
     if (whichMenu == FIMenuKindContextualMenuForItems && selectedURLs.count > 0) {
         NSMutableArray<NSURL *> *imageURLs = [NSMutableArray array];
         NSMutableArray<NSURL *> *pdfURLs = [NSMutableArray array];
+        NSMutableArray<NSURL *> *videoURLs = [NSMutableArray array];
         for (NSURL *url in selectedURLs) {
             NSString *ext = url.pathExtension.lowercaseString;
             if ([FTImageExtensions() containsObject:ext]) {
                 [imageURLs addObject:url];
             } else if ([ext isEqualToString:@"pdf"]) {
                 [pdfURLs addObject:url];
+            } else if ([FTVideoExtensions() containsObject:ext]) {
+                [videoURLs addObject:url];
             }
         }
 
         BOOL isImageConvEnabled = FTIsPreferenceEnabled(@"ImageConversionInFinder", YES);
         BOOL isPDFToolsEnabled = FTIsPreferenceEnabled(@"PDFToolsInFinder", YES);
+        BOOL isVideoConvEnabled = FTIsPreferenceEnabled(@"VideoConversionInFinder", YES);
 
         // A. Image Conversion Submenu (with Smart Format Filtering)
         if (isImageConvEnabled && imageURLs.count > 0) {
@@ -311,6 +325,45 @@ static inline NSString *FTLocalizedString(NSString *key) {
                 NSMenuItem *combinePDFItem = [[NSMenuItem alloc] initWithTitle:title action:@selector(combineSelectedIntoPDF:) keyEquivalent:@""];
                 combinePDFItem.image = FTSymbolImage(@"doc.on.doc");
                 [menu addItem:combinePDFItem];
+            }
+        }
+
+        // C. Video Actions (shown when video files selected, no mix with other types)
+        if (isVideoConvEnabled && videoURLs.count > 0 && imageURLs.count == 0 && pdfURLs.count == 0) {
+            BOOL allAreMP4 = YES;
+            BOOL allAreMOV = YES;
+            for (NSURL *url in videoURLs) {
+                NSString *ext = url.pathExtension.lowercaseString;
+                if (![ext isEqualToString:@"mp4"]) allAreMP4 = NO;
+                if (![ext isEqualToString:@"mov"]) allAreMOV = NO;
+            }
+
+            NSMenu *videoSubmenu = [[NSMenu alloc] initWithTitle:@""];
+
+            // Compress: always shown (H.264 1080p — equivalent of your ffmpeg CRF 22)
+            NSMenuItem *compressItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Compress Video (H.264)", nil) action:@selector(compressSelectedVideos:) keyEquivalent:@""];
+            compressItem.image = FTSymbolImage(@"arrow.down.doc");
+            [videoSubmenu addItem:compressItem];
+
+            // Convert to MP4 — shown only if not already all MP4
+            if (!allAreMP4) {
+                NSMenuItem *mp4Item = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"to MP4", nil) action:@selector(convertSelectedVideosToMP4:) keyEquivalent:@""];
+                mp4Item.image = FTSymbolImage(@"film");
+                [videoSubmenu addItem:mp4Item];
+            }
+
+            // Convert to MOV — shown only if not already all MOV
+            if (!allAreMOV) {
+                NSMenuItem *movItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"to MOV", nil) action:@selector(convertSelectedVideosToMOV:) keyEquivalent:@""];
+                movItem.image = FTSymbolImage(@"film");
+                [videoSubmenu addItem:movItem];
+            }
+
+            if (videoSubmenu.numberOfItems > 0) {
+                NSMenuItem *videoMainItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Video", nil) action:nil keyEquivalent:@""];
+                videoMainItem.image = FTSymbolImage(@"video");
+                videoMainItem.submenu = videoSubmenu;
+                [menu addItem:videoMainItem];
             }
         }
     }
@@ -1031,6 +1084,141 @@ static inline NSString *FTLocalizedString(NSString *key) {
     if (createdURLs.count > 0) {
         [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:createdURLs];
     }
+}
+
+
+#pragma mark - Video Operations
+
++ (NSString *)uniqueVideoPathInDirectory:(NSString *)dir baseName:(NSString *)base extension:(NSString *)ext {
+    NSString *path = [dir stringByAppendingPathComponent:[NSString stringWithFormat:@"%@.%@", base, ext]];
+    NSFileManager *fm = [NSFileManager defaultManager];
+    int counter = 1;
+    while ([fm fileExistsAtPath:path]) {
+        path = [dir stringByAppendingPathComponent:[NSString stringWithFormat:@"%@ (%d).%@", base, counter, ext]];
+        counter++;
+    }
+    return path;
+}
+
++ (void)exportVideoAtURL:(NSURL *)sourceURL
+              presetName:(NSString *)presetName
+              outputType:(AVFileType)fileType
+            outputExtension:(NSString *)outExt
+                  suffix:(NSString *)suffix
+       completionHandler:(void (^)(NSURL *outURL, NSError *error))completion {
+
+    AVURLAsset *asset = [AVURLAsset URLAssetWithURL:sourceURL options:nil];
+    NSString *dir = sourceURL.URLByDeletingLastPathComponent.path;
+    NSString *base = [sourceURL.lastPathComponent stringByDeletingPathExtension];
+    NSString *outPath = [FinderSync uniqueVideoPathInDirectory:dir baseName:[base stringByAppendingString:suffix] extension:outExt];
+    NSURL *outURL = [NSURL fileURLWithPath:outPath];
+
+    AVAssetExportSession *session = [AVAssetExportSession exportSessionWithAsset:asset presetName:presetName];
+    if (!session) {
+        NSError *err = [NSError errorWithDomain:@"FinderToys" code:1 userInfo:@{NSLocalizedDescriptionKey: @"Cannot create export session for this file"}];
+        completion(nil, err);
+        return;
+    }
+    session.outputURL = outURL;
+    session.outputFileType = fileType;
+    session.shouldOptimizeForNetworkUse = YES; // equivalent to -movflags +faststart
+
+    [session exportAsynchronouslyWithCompletionHandler:^{
+        if (session.status == AVAssetExportSessionStatusCompleted) {
+            completion(outURL, nil);
+        } else {
+            [[NSFileManager defaultManager] removeItemAtURL:outURL error:nil];
+            completion(nil, session.error);
+        }
+    }];
+}
+
+- (void)compressSelectedVideos:(id)sender {
+    [self processSelectedVideosWithPreset:AVAssetExportPreset1920x1080
+                               fileType:AVFileTypeMPEG4
+                              extension:@"mp4"
+                                 suffix:@"_compressed"];
+}
+
+- (void)convertSelectedVideosToMP4:(id)sender {
+    [self processSelectedVideosWithPreset:AVAssetExportPresetHighestQuality
+                               fileType:AVFileTypeMPEG4
+                              extension:@"mp4"
+                                 suffix:@""];
+}
+
+- (void)convertSelectedVideosToMOV:(id)sender {
+    [self processSelectedVideosWithPreset:AVAssetExportPresetHighestQuality
+                               fileType:AVFileTypeQuickTimeMovie
+                              extension:@"mov"
+                                 suffix:@""];
+}
+
+- (void)processSelectedVideosWithPreset:(NSString *)preset
+                               fileType:(AVFileType)fileType
+                              extension:(NSString *)ext
+                                 suffix:(NSString *)suffix {
+    NSArray<NSURL *> *selectedURLs = [[FIFinderSyncController defaultController] selectedItemURLs];
+    if (selectedURLs.count == 0) return;
+
+    BOOL trashOriginals = FTIsPreferenceEnabled(@"TrashOriginalsAfterConversionInFinder", YES);
+
+    NSMutableArray<NSURL *> *videoURLs = [NSMutableArray array];
+    for (NSURL *url in selectedURLs) {
+        if ([FTVideoExtensions() containsObject:url.pathExtension.lowercaseString]) {
+            [videoURLs addObject:url];
+        }
+    }
+    if (videoURLs.count == 0) return;
+
+    dispatch_group_t group = dispatch_group_create();
+    NSMutableArray<NSURL *> *createdURLs = [NSMutableArray array];
+    NSMutableArray<NSURL *> *toTrash = [NSMutableArray array];
+    dispatch_queue_t q = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
+
+    for (NSURL *sourceURL in videoURLs) {
+        dispatch_group_enter(group);
+        NSString *sourceSuffix = suffix.length > 0 ? suffix : @"_conv";
+        // For pure format conversion (no suffix), keep base name but change ext
+        NSString *actualSuffix = suffix;
+        if (suffix.length == 0) {
+            // Same name, different extension — skip if source already matches output ext
+            if ([sourceURL.pathExtension.lowercaseString isEqualToString:ext]) {
+                dispatch_group_leave(group);
+                continue;
+            }
+            actualSuffix = @"";
+        }
+        (void)sourceSuffix;
+
+        [FinderSync exportVideoAtURL:sourceURL
+                          presetName:preset
+                          outputType:fileType
+                    outputExtension:ext
+                              suffix:actualSuffix
+                   completionHandler:^(NSURL *outURL, NSError *error) {
+            if (outURL) {
+                @synchronized(createdURLs) {
+                    [createdURLs addObject:outURL];
+                    if (trashOriginals && ![sourceURL.path isEqualToString:outURL.path]) {
+                        [toTrash addObject:sourceURL];
+                    }
+                }
+            }
+            dispatch_group_leave(group);
+        }];
+    }
+
+    dispatch_group_notify(group, q, ^{
+        for (NSURL *u in toTrash) {
+            [[NSFileManager defaultManager] trashItemAtURL:u resultingItemURL:nil error:nil];
+        }
+        if (createdURLs.count > 0) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:[createdURLs copy]];
+            });
+        }
+    });
 }
 
 @end
