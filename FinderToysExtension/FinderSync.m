@@ -253,26 +253,51 @@ static inline NSString *FTLocalizedString(NSString *key) {
         BOOL isImageConvEnabled = FTIsPreferenceEnabled(@"ImageConversionInFinder", YES);
         BOOL isPDFToolsEnabled = FTIsPreferenceEnabled(@"PDFToolsInFinder", YES);
 
-        // A. Image Conversion Submenu
+        // A. Image Conversion Submenu (with Smart Format Filtering)
         if (isImageConvEnabled && imageURLs.count > 0) {
+            BOOL allArePNG = YES;
+            BOOL allAreJPEG = YES;
+            BOOL allAreHEIC = YES;
+
+            for (NSURL *url in imageURLs) {
+                NSString *ext = url.pathExtension.lowercaseString;
+                if (![ext isEqualToString:@"png"]) {
+                    allArePNG = NO;
+                }
+                if (![ext isEqualToString:@"jpg"] && ![ext isEqualToString:@"jpeg"]) {
+                    allAreJPEG = NO;
+                }
+                if (![ext isEqualToString:@"heic"] && ![ext isEqualToString:@"heif"]) {
+                    allAreHEIC = NO;
+                }
+            }
+
             NSMenu *convSubmenu = [[NSMenu alloc] initWithTitle:@""];
 
-            NSMenuItem *pngItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"to PNG", nil) action:@selector(convertSelectedImagesToPNG:) keyEquivalent:@""];
-            pngItem.image = FTSymbolImage(@"photo");
-            [convSubmenu addItem:pngItem];
+            if (!allArePNG) {
+                NSMenuItem *pngItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"to PNG", nil) action:@selector(convertSelectedImagesToPNG:) keyEquivalent:@""];
+                pngItem.image = FTSymbolImage(@"photo");
+                [convSubmenu addItem:pngItem];
+            }
 
-            NSMenuItem *jpegItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"to JPEG", nil) action:@selector(convertSelectedImagesToJPEG:) keyEquivalent:@""];
-            jpegItem.image = FTSymbolImage(@"photo");
-            [convSubmenu addItem:jpegItem];
+            if (!allAreJPEG) {
+                NSMenuItem *jpegItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"to JPEG", nil) action:@selector(convertSelectedImagesToJPEG:) keyEquivalent:@""];
+                jpegItem.image = FTSymbolImage(@"photo");
+                [convSubmenu addItem:jpegItem];
+            }
 
-            NSMenuItem *heicItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"to HEIC", nil) action:@selector(convertSelectedImagesToHEIC:) keyEquivalent:@""];
-            heicItem.image = FTSymbolImage(@"photo");
-            [convSubmenu addItem:heicItem];
+            if (!allAreHEIC) {
+                NSMenuItem *heicItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"to HEIC", nil) action:@selector(convertSelectedImagesToHEIC:) keyEquivalent:@""];
+                heicItem.image = FTSymbolImage(@"photo");
+                [convSubmenu addItem:heicItem];
+            }
 
-            NSMenuItem *convMainItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Convert", nil) action:nil keyEquivalent:@""];
-            convMainItem.image = FTSymbolImage(@"arrow.triangle.2.circlepath");
-            convMainItem.submenu = convSubmenu;
-            [menu addItem:convMainItem];
+            if (convSubmenu.numberOfItems > 0) {
+                NSMenuItem *convMainItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Convert", nil) action:nil keyEquivalent:@""];
+                convMainItem.image = FTSymbolImage(@"arrow.triangle.2.circlepath");
+                convMainItem.submenu = convSubmenu;
+                [menu addItem:convMainItem];
+            }
         }
 
         // B. PDF Actions (Only show when 2 or more files are selected!)
