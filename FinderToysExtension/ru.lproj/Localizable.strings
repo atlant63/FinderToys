@@ -25,3 +25,15 @@
 
 /* Errors */
 "Failed to open Terminal" = "Не удалось открыть терминал";
+
+/* Conversion & PDF */
+"Convert" = "Конвертировать";
+"to PNG" = "в PNG";
+"to JPEG" = "в JPEG";
+"to HEIC" = "в HEIC";
+"Compress Image" = "Сжать изображение";
+"Combine into PDF" = "Собрать в один PDF";
+"Merge PDFs" = "Объединить PDF в один";
+"Compress PDF" = "Сжать PDF";
+"Images" = "Изображения";
+"Combined" = "Объединённый";

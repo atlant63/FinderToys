@@ -11,3 +11,6 @@
 "Quit" = "Выйти";
 "✅ Accessibility: Granted" = "✅ Доступ к специальным возможностям: разрешён";
 "⚠️ Grant Accessibility Access…" = "⚠️ Разрешить доступ к специальным возможностям…";
+
+"Image Conversion (PNG / JPEG / HEIC)" = "Конвертер изображений (PNG / JPEG / HEIC)";
+"PDF Tools (Merge / Compress)" = "Действия с PDF (Собрать / Сжать)";

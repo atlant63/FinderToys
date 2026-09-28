@@ -29,3 +29,15 @@
 
 /* Errors */
 "Failed to open Terminal" = "Failed to open Terminal";
+
+/* Conversion & PDF */
+"Convert" = "Convert";
+"to PNG" = "to PNG";
+"to JPEG" = "to JPEG";
+"to HEIC" = "to HEIC";
+"Compress Image" = "Compress Image";
+"Combine into PDF" = "Combine into PDF";
+"Merge PDFs" = "Merge PDFs";
+"Compress PDF" = "Compress PDF";
+"Images" = "Images";
+"Combined" = "Combined";

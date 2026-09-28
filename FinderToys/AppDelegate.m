@@ -31,6 +31,8 @@ static inline NSString *FTAppLocalizedString(NSString *key) {
 
 static NSString * const kEnterToOpenDefaultsKey = @"EnterToOpenInFinder";
 static NSString * const kPasteClipboardDefaultsKey = @"PasteClipboardToFileInFinder";
+static NSString * const kImageConversionDefaultsKey = @"ImageConversionInFinder";
+static NSString * const kPDFToolsDefaultsKey = @"PDFToolsInFinder";
 #define FT_SYNTHETIC_TAG 0x465453 // 'MNF'
 
 static CFMachPortRef sEventTap = NULL;
@@ -42,6 +44,8 @@ static BOOL sIsSynthesizing = NO;
 @property (strong) NSStatusItem *statusItem;
 @property (strong) NSMenuItem *enterToOpenMenuItem;
 @property (strong) NSMenuItem *pasteClipboardMenuItem;
+@property (strong) NSMenuItem *imageConversionMenuItem;
+@property (strong) NSMenuItem *pdfToolsMenuItem;
 @property (strong) NSMenuItem *accessibilityMenuItem;
 @property (strong) NSTimer *accessibilityPollTimer;
 
@@ -185,6 +189,21 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
 }
 
 @implementation AppDelegate
+
++ (BOOL)isFeatureEnabled:(NSString *)key defaultVal:(BOOL)def {
+    CFPreferencesAppSynchronize(CFSTR("com.atlant63.FinderToys"));
+    Boolean keyExists = false;
+    Boolean val = CFPreferencesGetAppBooleanValue((__bridge CFStringRef)key, CFSTR("com.atlant63.FinderToys"), &keyExists);
+    return keyExists ? (BOOL)val : def;
+}
+
++ (void)setFeatureEnabled:(BOOL)enabled forKey:(NSString *)key {
+    CFPreferencesSetAppValue((__bridge CFStringRef)key, (__bridge CFPropertyListRef)@(enabled), CFSTR("com.atlant63.FinderToys"));
+    CFPreferencesAppSynchronize(CFSTR("com.atlant63.FinderToys"));
+    [[NSUserDefaults standardUserDefaults] setBool:enabled forKey:key];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+}
+
 
 + (NSString *)currentFinderFolderPath {
     // 1. Accessibility API: get focused or main window's AXDocument attribute from Finder
@@ -465,6 +484,22 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     self.pasteClipboardMenuItem.state = [[NSUserDefaults standardUserDefaults] boolForKey:kPasteClipboardDefaultsKey] ? NSControlStateValueOn : NSControlStateValueOff;
     [menu addItem:self.pasteClipboardMenuItem];
 
+    // Toggle for Image Conversion
+    self.imageConversionMenuItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Image Conversion (PNG / JPEG / HEIC)", nil)
+                                                              action:@selector(toggleImageConversion:)
+                                                       keyEquivalent:@""];
+    self.imageConversionMenuItem.target = self;
+    self.imageConversionMenuItem.state = [AppDelegate isFeatureEnabled:kImageConversionDefaultsKey defaultVal:YES] ? NSControlStateValueOn : NSControlStateValueOff;
+    [menu addItem:self.imageConversionMenuItem];
+
+    // Toggle for PDF Tools
+    self.pdfToolsMenuItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"PDF Tools (Merge / Compress)", nil)
+                                                       action:@selector(togglePDFTools:)
+                                                keyEquivalent:@""];
+    self.pdfToolsMenuItem.target = self;
+    self.pdfToolsMenuItem.state = [AppDelegate isFeatureEnabled:kPDFToolsDefaultsKey defaultVal:YES] ? NSControlStateValueOn : NSControlStateValueOff;
+    [menu addItem:self.pdfToolsMenuItem];
+
     [menu addItem:[NSMenuItem separatorItem]];
     [menu addItemWithTitle:NSLocalizedString(@"Quit", nil) action:@selector(terminate:) keyEquivalent:@"q"];
 
@@ -507,6 +542,21 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
         [self setupEventTap];
     }
 }
+
+- (void)toggleImageConversion:(id)sender {
+    BOOL current = [AppDelegate isFeatureEnabled:kImageConversionDefaultsKey defaultVal:YES];
+    BOOL newSetting = !current;
+    [AppDelegate setFeatureEnabled:newSetting forKey:kImageConversionDefaultsKey];
+    self.imageConversionMenuItem.state = newSetting ? NSControlStateValueOn : NSControlStateValueOff;
+}
+
+- (void)togglePDFTools:(id)sender {
+    BOOL current = [AppDelegate isFeatureEnabled:kPDFToolsDefaultsKey defaultVal:YES];
+    BOOL newSetting = !current;
+    [AppDelegate setFeatureEnabled:newSetting forKey:kPDFToolsDefaultsKey];
+    self.pdfToolsMenuItem.state = newSetting ? NSControlStateValueOn : NSControlStateValueOff;
+}
+
 
 - (void)setupEventTap {
     BOOL isTrusted = AXIsProcessTrusted();

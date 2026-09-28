@@ -6,6 +6,25 @@
 //
 
 #import "FinderSync.h"
+#import <ImageIO/ImageIO.h>
+#import <PDFKit/PDFKit.h>
+#import <Quartz/Quartz.h>
+
+static inline BOOL FTIsPreferenceEnabled(NSString *key, BOOL defaultVal) {
+    CFPreferencesAppSynchronize(CFSTR("com.atlant63.FinderToys"));
+    Boolean keyExists = false;
+    Boolean val = CFPreferencesGetAppBooleanValue((__bridge CFStringRef)key, CFSTR("com.atlant63.FinderToys"), &keyExists);
+    return keyExists ? (BOOL)val : defaultVal;
+}
+
+static inline NSSet<NSString *> *FTImageExtensions(void) {
+    static NSSet *set = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        set = [NSSet setWithObjects:@"png", @"jpg", @"jpeg", @"webp", @"heic", @"heif", @"tiff", @"tif", @"bmp", @"gif", nil];
+    });
+    return set;
+}
 
 static inline NSString *FTLocalizedString(NSString *key) {
     static NSBundle *bundle = nil;
@@ -167,6 +186,88 @@ static inline NSString *FTLocalizedString(NSString *key) {
     mainItem.image = mainIcon;
     mainItem.submenu = submenu;
     [menu addItem:mainItem];
+
+    // Check selected items: ONLY show Convert and PDF actions when right-clicking on specific files!
+    NSArray<NSURL *> *selectedURLs = [[FIFinderSyncController defaultController] selectedItemURLs];
+    if (whichMenu == FIMenuKindContextualMenuForItems && selectedURLs.count > 0) {
+        NSMutableArray<NSURL *> *imageURLs = [NSMutableArray array];
+        NSMutableArray<NSURL *> *pdfURLs = [NSMutableArray array];
+        for (NSURL *url in selectedURLs) {
+            NSString *ext = url.pathExtension.lowercaseString;
+            if ([FTImageExtensions() containsObject:ext]) {
+                [imageURLs addObject:url];
+            } else if ([ext isEqualToString:@"pdf"]) {
+                [pdfURLs addObject:url];
+            }
+        }
+
+        BOOL isImageConvEnabled = FTIsPreferenceEnabled(@"ImageConversionInFinder", YES);
+        BOOL isPDFToolsEnabled = FTIsPreferenceEnabled(@"PDFToolsInFinder", YES);
+
+        // A. Image Conversion Submenu
+        if (isImageConvEnabled && imageURLs.count > 0) {
+            NSMenu *convSubmenu = [[NSMenu alloc] initWithTitle:@""];
+
+            NSMenuItem *pngItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"to PNG", nil) action:@selector(convertSelectedImagesToPNG:) keyEquivalent:@""];
+            if (@available(macOS 11.0, *)) {
+                pngItem.image = [NSImage imageWithSystemSymbolName:@"photo" accessibilityDescription:nil];
+            }
+            [convSubmenu addItem:pngItem];
+
+            NSMenuItem *jpegItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"to JPEG", nil) action:@selector(convertSelectedImagesToJPEG:) keyEquivalent:@""];
+            if (@available(macOS 11.0, *)) {
+                jpegItem.image = [NSImage imageWithSystemSymbolName:@"photo" accessibilityDescription:nil];
+            }
+            [convSubmenu addItem:jpegItem];
+
+            NSMenuItem *heicItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"to HEIC", nil) action:@selector(convertSelectedImagesToHEIC:) keyEquivalent:@""];
+            if (@available(macOS 11.0, *)) {
+                heicItem.image = [NSImage imageWithSystemSymbolName:@"photo" accessibilityDescription:nil];
+            }
+            [convSubmenu addItem:heicItem];
+
+            [convSubmenu addItem:[NSMenuItem separatorItem]];
+
+            NSMenuItem *compressImgItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Compress Image", nil) action:@selector(compressSelectedImages:) keyEquivalent:@""];
+            if (@available(macOS 11.0, *)) {
+                compressImgItem.image = [NSImage imageWithSystemSymbolName:@"arrow.down.doc" accessibilityDescription:nil];
+            }
+            [convSubmenu addItem:compressImgItem];
+
+            NSMenuItem *convMainItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Convert", nil) action:nil keyEquivalent:@""];
+            if (@available(macOS 11.0, *)) {
+                convMainItem.image = [NSImage imageWithSystemSymbolName:@"arrow.triangle.2.circlepath" accessibilityDescription:nil];
+            }
+            convMainItem.submenu = convSubmenu;
+            [menu addItem:convMainItem];
+        }
+
+        // B. PDF Actions
+        if (isPDFToolsEnabled) {
+            if (pdfURLs.count == 1 && imageURLs.count == 0) {
+                // Single PDF: Compress PDF
+                NSMenuItem *compressPDFItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Compress PDF", nil) action:@selector(compressSelectedPDF:) keyEquivalent:@""];
+                if (@available(macOS 11.0, *)) {
+                    compressPDFItem.image = [NSImage imageWithSystemSymbolName:@"arrow.down.doc" accessibilityDescription:nil];
+                }
+                [menu addItem:compressPDFItem];
+            } else if (pdfURLs.count >= 2 && imageURLs.count == 0) {
+                // Multiple PDFs: Merge PDFs
+                NSMenuItem *mergePDFItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Merge PDFs", nil) action:@selector(combineSelectedIntoPDF:) keyEquivalent:@""];
+                if (@available(macOS 11.0, *)) {
+                    mergePDFItem.image = [NSImage imageWithSystemSymbolName:@"doc.on.doc" accessibilityDescription:nil];
+                }
+                [menu addItem:mergePDFItem];
+            } else if (imageURLs.count > 0) {
+                // Images selected (or combination): Combine into PDF
+                NSMenuItem *combinePDFItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Combine into PDF", nil) action:@selector(combineSelectedIntoPDF:) keyEquivalent:@""];
+                if (@available(macOS 11.0, *)) {
+                    combinePDFItem.image = [NSImage imageWithSystemSymbolName:@"doc.on.doc" accessibilityDescription:nil];
+                }
+                [menu addItem:combinePDFItem];
+            }
+        }
+    }
 
     // 2. Add "Copy Path" menu item
     NSMenuItem *copyPathItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Copy Path", nil) action:@selector(copyPathToClipboard:) keyEquivalent:@""];
@@ -669,6 +770,207 @@ static inline NSString *FTLocalizedString(NSString *key) {
         NSLog(@"Created: %@", filePath);
         NSURL *fileURL = [NSURL fileURLWithPath:filePath];
         [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[fileURL]];
+    }
+}
+
+
+#pragma mark - Image & PDF Operations
+
++ (BOOL)convertImageAtURL:(NSURL *)sourceURL toType:(CFStringRef)destType outputExtension:(NSString *)newExt createdURL:(NSURL **)outURL quality:(NSNumber *)quality {
+    CGImageSourceRef source = CGImageSourceCreateWithURL((__bridge CFURLRef)sourceURL, NULL);
+    if (!source) return NO;
+
+    CGImageRef imageRef = CGImageSourceCreateImageAtIndex(source, 0, NULL);
+    CFRelease(source);
+    if (!imageRef) return NO;
+
+    NSString *origDir = sourceURL.URLByDeletingLastPathComponent.path;
+    NSString *baseName = [sourceURL.lastPathComponent stringByDeletingPathExtension];
+    if (quality && [newExt isEqualToString:sourceURL.pathExtension.lowercaseString]) {
+        baseName = [baseName stringByAppendingString:@"_compressed"];
+    }
+
+    NSString *destPath = [origDir stringByAppendingPathComponent:[NSString stringWithFormat:@"%@.%@", baseName, newExt]];
+    NSFileManager *fm = [NSFileManager defaultManager];
+    int counter = 1;
+    while ([fm fileExistsAtPath:destPath]) {
+        destPath = [origDir stringByAppendingPathComponent:[NSString stringWithFormat:@"%@ (%d).%@", baseName, counter, newExt]];
+        counter++;
+    }
+
+    NSURL *destURL = [NSURL fileURLWithPath:destPath];
+    CGImageDestinationRef dest = CGImageDestinationCreateWithURL((__bridge CFURLRef)destURL, destType, 1, NULL);
+    if (!dest) {
+        CGImageRelease(imageRef);
+        return NO;
+    }
+
+    NSDictionary *props = nil;
+    if (quality) {
+        props = @{ (__bridge NSString *)kCGImageDestinationLossyCompressionQuality: quality };
+    }
+    CGImageDestinationAddImage(dest, imageRef, (__bridge CFDictionaryRef)props);
+    BOOL success = CGImageDestinationFinalize(dest);
+    CFRelease(dest);
+    CGImageRelease(imageRef);
+
+    if (success && outURL) {
+        *outURL = destURL;
+    }
+    return success;
+}
+
++ (NSURL *)createPDFFromItems:(NSArray<NSURL *> *)urls inDirectory:(NSString *)dir {
+    PDFDocument *pdfDoc = [[PDFDocument alloc] init];
+    NSFileManager *fm = [NSFileManager defaultManager];
+
+    NSString *baseName = NSLocalizedString(@"Images", nil);
+    BOOL hasOnlyPDFs = YES;
+    for (NSURL *u in urls) {
+        if (![u.pathExtension.lowercaseString isEqualToString:@"pdf"]) {
+            hasOnlyPDFs = NO;
+            break;
+        }
+    }
+    if (hasOnlyPDFs) {
+        baseName = NSLocalizedString(@"Combined", nil);
+    } else if (urls.count == 1) {
+        baseName = [urls.firstObject.lastPathComponent stringByDeletingPathExtension];
+    }
+
+    NSString *destPath = [dir stringByAppendingPathComponent:[NSString stringWithFormat:@"%@.pdf", baseName]];
+    int counter = 1;
+    while ([fm fileExistsAtPath:destPath]) {
+        destPath = [dir stringByAppendingPathComponent:[NSString stringWithFormat:@"%@ (%d).pdf", baseName, counter]];
+        counter++;
+    }
+
+    NSUInteger pageIdx = 0;
+    for (NSURL *url in urls) {
+        NSString *ext = url.pathExtension.lowercaseString;
+        if ([ext isEqualToString:@"pdf"]) {
+            PDFDocument *srcDoc = [[PDFDocument alloc] initWithURL:url];
+            if (srcDoc) {
+                for (NSUInteger i = 0; i < srcDoc.pageCount; i++) {
+                    PDFPage *p = [srcDoc pageAtIndex:i];
+                    if (p) {
+                        [pdfDoc insertPage:p atIndex:pageIdx++];
+                    }
+                }
+            }
+        } else if ([FTImageExtensions() containsObject:ext]) {
+            NSImage *img = [[NSImage alloc] initWithContentsOfURL:url];
+            if (img) {
+                PDFPage *page = [[PDFPage alloc] initWithImage:img];
+                if (page) {
+                    [pdfDoc insertPage:page atIndex:pageIdx++];
+                }
+            }
+        }
+    }
+
+    if (pdfDoc.pageCount > 0) {
+        NSURL *destURL = [NSURL fileURLWithPath:destPath];
+        if ([pdfDoc writeToURL:destURL]) {
+            return destURL;
+        }
+    }
+    return nil;
+}
+
++ (NSURL *)compressPDFAtURL:(NSURL *)pdfURL {
+    PDFDocument *srcDoc = [[PDFDocument alloc] initWithURL:pdfURL];
+    if (!srcDoc || srcDoc.pageCount == 0) return nil;
+
+    NSString *dir = pdfURL.URLByDeletingLastPathComponent.path;
+    NSString *base = [pdfURL.lastPathComponent stringByDeletingPathExtension];
+    NSString *newName = [base stringByAppendingString:@"_compressed"];
+
+    NSString *destPath = [dir stringByAppendingPathComponent:[NSString stringWithFormat:@"%@.pdf", newName]];
+    NSFileManager *fm = [NSFileManager defaultManager];
+    int counter = 1;
+    while ([fm fileExistsAtPath:destPath]) {
+        destPath = [dir stringByAppendingPathComponent:[NSString stringWithFormat:@"%@ (%d).pdf", newName, counter]];
+        counter++;
+    }
+
+    NSURL *filterURL = [NSURL fileURLWithPath:@"/System/Library/Filters/Reduce File Size.qfilter"];
+    QuartzFilter *filter = [QuartzFilter quartzFilterWithURL:filterURL];
+    NSDictionary *options = filter ? @{ @"QuartzFilter": filter } : @{};
+
+    if ([srcDoc writeToFile:destPath withOptions:options]) {
+        return [NSURL fileURLWithPath:destPath];
+    }
+    return nil;
+}
+
+- (void)convertSelectedImagesToPNG:(id)sender {
+    [self convertSelectedImagesToType:CFSTR("public.png") extension:@"png" quality:nil];
+}
+
+- (void)convertSelectedImagesToJPEG:(id)sender {
+    [self convertSelectedImagesToType:CFSTR("public.jpeg") extension:@"jpg" quality:nil];
+}
+
+- (void)convertSelectedImagesToHEIC:(id)sender {
+    [self convertSelectedImagesToType:CFSTR("public.heic") extension:@"heic" quality:nil];
+}
+
+- (void)compressSelectedImages:(id)sender {
+    [self convertSelectedImagesToType:CFSTR("public.jpeg") extension:@"jpg" quality:@(0.75)];
+}
+
+- (void)convertSelectedImagesToType:(CFStringRef)destType extension:(NSString *)ext quality:(NSNumber *)quality {
+    NSArray<NSURL *> *selectedURLs = [[FIFinderSyncController defaultController] selectedItemURLs];
+    if (selectedURLs.count == 0) return;
+
+    NSMutableArray<NSURL *> *createdURLs = [NSMutableArray array];
+    for (NSURL *sourceURL in selectedURLs) {
+        NSString *sourceExt = sourceURL.pathExtension.lowercaseString;
+        if (![FTImageExtensions() containsObject:sourceExt]) continue;
+
+        NSURL *outURL = nil;
+        if ([FinderSync convertImageAtURL:sourceURL toType:destType outputExtension:ext createdURL:&outURL quality:quality]) {
+            if (outURL) {
+                [createdURLs addObject:outURL];
+            }
+        }
+    }
+
+    if (createdURLs.count > 0) {
+        [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:createdURLs];
+    }
+}
+
+- (void)combineSelectedIntoPDF:(id)sender {
+    NSArray<NSURL *> *selectedURLs = [[FIFinderSyncController defaultController] selectedItemURLs];
+    if (selectedURLs.count == 0) return;
+
+    NSURL *targetDir = [self targetDirectoryURL];
+    if (!targetDir) {
+        targetDir = selectedURLs.firstObject.URLByDeletingLastPathComponent;
+    }
+
+    NSURL *createdPDF = [FinderSync createPDFFromItems:selectedURLs inDirectory:targetDir.path];
+    if (createdPDF) {
+        [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[createdPDF]];
+    }
+}
+
+- (void)compressSelectedPDF:(id)sender {
+    NSArray<NSURL *> *selectedURLs = [[FIFinderSyncController defaultController] selectedItemURLs];
+    if (selectedURLs.count == 0) return;
+
+    NSMutableArray<NSURL *> *createdURLs = [NSMutableArray array];
+    for (NSURL *url in selectedURLs) {
+        if (![url.pathExtension.lowercaseString isEqualToString:@"pdf"]) continue;
+        NSURL *compressed = [FinderSync compressPDFAtURL:url];
+        if (compressed) {
+            [createdURLs addObject:compressed];
+        }
+    }
+    if (createdURLs.count > 0) {
+        [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:createdURLs];
     }
 }
 

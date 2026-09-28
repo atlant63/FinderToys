@@ -85,6 +85,13 @@ Right-click anywhere on empty space in Finder or on your Desktop:
   * **Apple iWork:** Pages (`.pages`), Numbers (`.numbers`), Keynote (`.key`)
 * **Copy Path:** Copies the clean POSIX file or directory path directly to clipboard without surrounding quotes.
 * **Open Terminal:** Launches Terminal directly at the current directory.
+* **🔄 Image Converter (dynamic, shown only when images are selected):**
+  * 1-click native conversion of WebP, HEIC, PNG, JPG to PNG, JPEG, or HEIC.
+  * Quick image compression.
+* **📑 Fast PDF Tools (dynamic, shown when images or PDFs are selected):**
+  * **Combine into PDF:** select multiple photos, scans, or PDFs → Right Click → instant merge into a single PDF.
+  * **Compress PDF:** reduce PDF file size natively via macOS Quartz Filter.
+  * *When right-clicking on empty folder space, converter and PDF items remain completely hidden.*
 
 ### 4. 🌐 Menu Bar & Bilingual Automatic Language Detection
 * Minimalist status bar icon with toggles to enable/disable Enter to Open or Clipboard Paste at any time.
