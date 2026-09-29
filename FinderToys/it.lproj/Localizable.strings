@@ -1,14 +1,18 @@
 /*
   Localizable.strings
-  MacNewFile (Main App)
+  FinderToys (Main App)
 */
 
 /* Menu Bar App */
-"NF" = "NF";
-"MacNewFile is running" = "MacNewFile è in esecuzione";
+"FT" = "FT";
+"FinderToys is running" = "FinderToys è in esecuzione";
+"Enter to open in Finder (F2 to rename)" = "Invio per aprire (Option+F2 / F2 per rinominare)";
+"Paste Clipboard to file (⌘V)" = "Incolla dagli appunti su file (⌘V)";
 "Quit" = "Esci";
+"✅ Accessibility: Granted" = "✅ Accessibilità: consentita";
+"⚠️ Grant Accessibility Access…" = "⚠️ Concedi accesso alle funzioni di accessibilità…";
 
 "Image Conversion (PNG / JPEG / HEIC)" = "Conversione immagini (PNG / JPEG / HEIC)";
-"PDF Tools (Merge / Compress)" = "Strumenti PDF (Unisci / Comprimi)";
+"Video Compression & Conversion" = "Conversione e compressione video (MP4 / MOV / GIF)";
+"PDF & Document Tools (Word / PDF)" = "Strumenti PDF e documenti (Word / PDF)";
 "Move original to Trash after conversion" = "Sposta l'originale nel Cestino dopo la conversione";
-"Video Compression & Conversion" = "Compressione e conversione video";

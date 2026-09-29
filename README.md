@@ -4,7 +4,7 @@
 
 # FinderToys 🛠️
 ### The Ultimate PowerToys Utility for macOS Finder
-**Enter to Open • F2 to Rename • ⌘V Paste to File • Right-Click New File Menu**
+**Enter to Open • F2 to Rename • ⌘V Paste to File • Video & Word Converters • PDF Tools • Right-Click New File Menu**
 
 **English** | [Русский](README.ru.md)
 
@@ -23,7 +23,7 @@
 
 ---
 
-**FinderToys** is a native, ultra-lightweight macOS productivity toolkit designed to fix the biggest pain points of Apple's Finder. It introduces essential desktop features familiar to Windows switchers and power users: **Enter to open files**, **F2 to rename**, **Cmd+V to save clipboard images and text directly as files**, and a **custom right-click "New File" context menu**.
+**FinderToys** is a native, ultra-lightweight macOS productivity toolkit designed to fix the biggest pain points of Apple's Finder. It introduces essential desktop features familiar to Windows switchers and power users: **Enter to open files**, **F2 to rename**, **Cmd+V to save clipboard images and text directly as files**, a **custom right-click "New File" context menu**, plus built-in **video compression & GIF maker**, **Word-to-PDF conversion**, and **PDF merging**.
 
 Unlike heavy Electron alternatives, FinderToys is crafted with pure Objective-C and AppKit, consuming **0% CPU** and under **15 MB of RAM**.
 
@@ -55,6 +55,9 @@ curl -fsSL https://raw.githubusercontent.com/atlant63/FinderToys/main/install.sh
 | **Right-Click "New File" Menu** | ❌ Not supported | ✅ Built-in | **✅ Office, iWork, Text, Markdown, JSON** |
 | **Copy Path without Quotes** | ⚠️ Clunky shortcut | ⚠️ Manual copy | **✅ One-click clean POSIX path** |
 | **Open Terminal at Current Folder** | ⚠️ Multi-step service setup | ✅ Address bar trick | **✅ One-click context menu item** |
+| **Video Compression & GIF** | ❌ None | ❌ Third-party required | **✅ H.264 CRF 22 Compress, MP4, MOV, GIF** |
+| **Word to PDF / TXT / DOCX** | ❌ Requires MS Office | ❌ Requires MS Office | **✅ Native in-process conversion** |
+| **Merge into Single PDF** | ⚠️ Clunky Quick Actions | ❌ Third-party required | **✅ 1-click merge images & PDFs** |
 | **Memory & Battery Impact** | High (third-party Electron apps) | N/A | **⚡ Native AppKit (~0% CPU, <15 MB RAM)** |
 
 ---
@@ -85,17 +88,32 @@ Right-click anywhere on empty space in Finder or on your Desktop:
   * **Apple iWork:** Pages (`.pages`), Numbers (`.numbers`), Keynote (`.key`)
 * **Copy Path:** Copies the clean POSIX file or directory path directly to clipboard without surrounding quotes.
 * **Open Terminal:** Launches Terminal directly at the current directory.
-* **🔄 Image Converter (dynamic, shown only when images are selected):**
-  * 1-click native conversion of WebP, HEIC, PNG, JPG to PNG, JPEG, or HEIC.
-  * Quick image compression.
-* **📑 Fast PDF Tools (dynamic, shown when images or PDFs are selected):**
-  * **Combine into PDF:** select multiple photos, scans, or PDFs → Right Click → instant merge into a single PDF.
-  * **Compress PDF:** reduce PDF file size natively via macOS Quartz Filter.
-  * *When right-clicking on empty folder space, converter and PDF items remain completely hidden.*
 
-### 4. 🌐 Menu Bar & Bilingual Automatic Language Detection
-* Minimalist status bar icon with toggles to enable/disable Enter to Open or Clipboard Paste at any time.
-* **Seamless Language Adaptation:** Automatically matches your macOS system language:
+### 4. 🔄 Smart Format & File Converters (Dynamic Context Submenus)
+Context menu actions automatically appear only when relevant files are selected, keeping Finder clean:
+
+* **🖼️ Image Tools (PNG, JPG, HEIC, WebP, TIFF, BMP):**
+  * **to PNG / to JPEG / to HEIC:** 1-click format conversion (current format is automatically excluded).
+  * **to PDF:** Convert a single photo directly into a vector PDF page.
+  * **Combine into PDF:** Select 2+ photos or scans to merge them into a single PDF.
+* **🎬 Video Tools (MP4, MOV, MKV, AVI, WebM, etc.):**
+  * **Compress (H.264):** High-efficiency video compression via ffmpeg (CRF 22, fast preset, tune film, faststart) or native AVAssetExport fallback. Originals are never touched.
+  * **to MP4 / to MOV:** Fast format conversion with smart filtering.
+  * **to GIF:** High-quality two-pass palette GIF generator (12 fps, lanczos scaling up to 720p, bayer dithering).
+* **📄 Word & Document Tools (.docx, .doc, .rtf, .odt):**
+  * **Convert ▸ to PDF:** Multi-page A4 vector PDF rendering with selectable text and standard margins directly through AppKit TextKit and PDFKit (no Microsoft Office or LibreOffice required).
+  * **Convert ▸ to TXT:** Instant plain-text extraction.
+  * **Convert ▸ to DOCX:** Upgrade legacy `.doc`, `.rtf`, or `.odt` files to modern `.docx`.
+* **📑 PDF Tools:**
+  * **Merge PDFs:** Select 2 or more PDF documents to merge them into one unified file in seconds.
+
+### 5. 🌐 Menu Bar & Preferences
+* Status bar icon with clean categorized toggles:
+  * **Finder Shortcuts:** Toggle Enter to open & ⌘V paste to file.
+  * **Context Converters:** Enable/disable Image, Video, or Document & PDF tools independently.
+  * **Conversion Options:** Option to move original files to Trash after format conversion (never affects compress, GIF, PDF, or Word).
+  * **Real-time Accessibility Status:** Shows `✅ Accessibility: Granted` or a one-click button to grant permission.
+* **Bilingual Automatic Language Detection:**
   * Native **Russian** on Russian macOS configurations (`ru-RU`, `ru-UZ`, etc.).
   * Native **English** for international users.
 
@@ -122,8 +140,8 @@ Install FinderToys. It automatically rebinds <kbd>Enter</kbd> to open selected f
 ### How do I paste a copied image directly into Finder as a PNG?
 Copy any image to your clipboard from a browser or screenshot tool, switch to Finder, and press <kbd>⌘V</kbd>. FinderToys instantly writes `image.png` to the active directory.
 
-### How do I add a "New File" option to the Mac right-click menu?
-FinderToys includes a native Apple Finder Sync extension that integrates "New File" directly into your right-click context menu, supporting `.txt`, `.docx`, `.xlsx`, `.pptx`, `.md`, and `.json`.
+### How do I convert Word documents to PDF without Microsoft Office?
+Select one or more `.docx`, `.doc`, `.rtf`, or `.odt` files in Finder, right-click, and choose **Convert ▸ to PDF**. FinderToys creates multi-page A4 PDFs in the same folder natively.
 
 ### Does FinderToys drain battery or slow down my Mac?
 No. FinderToys is written in native Objective-C with event tap filtering. It uses 0% CPU at idle and takes less than 15 MB of memory.

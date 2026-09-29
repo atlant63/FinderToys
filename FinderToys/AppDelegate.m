@@ -125,6 +125,10 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
 
     BOOL isRenameTrigger = isCmdR || isF2Trigger || isOptOrShiftReturn;
     if (isRenameTrigger) {
+        if (![[NSUserDefaults standardUserDefaults] boolForKey:kEnterToOpenDefaultsKey]) {
+            return event;
+        }
+
         if (isEditingText) {
             return event;
         }
@@ -177,15 +181,17 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
 
     // 3. Paste Clipboard -> File: ⌘V (keyCode 9)
     if (keyCode == 9 && hasCmd && !hasShift && !hasAlt && !hasCtrl) {
+        if (![[NSUserDefaults standardUserDefaults] boolForKey:kPasteClipboardDefaultsKey]) {
+            return event;
+        }
+
         if (isEditingText) {
             // When editing text in Finder (e.g. renaming file, search box, Go to folder), let Cmd+V paste text into the field!
             return event;
         }
 
-        if ([[NSUserDefaults standardUserDefaults] boolForKey:kPasteClipboardDefaultsKey]) {
-            if ([AppDelegate handlePasteInFinder]) {
-                return NULL; // Handled: file created from clipboard! Suppress native paste.
-            }
+        if ([AppDelegate handlePasteInFinder]) {
+            return NULL; // Handled: file created from clipboard! Suppress native paste.
         }
     }
 
@@ -469,10 +475,15 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
 
     // Create dropdown menu on click
     NSMenu *menu = [[NSMenu alloc] init];
-    [menu addItemWithTitle:NSLocalizedString(@"FinderToys is running", nil) action:nil keyEquivalent:@""];
+
+    // Status header (informative title)
+    NSMenuItem *statusHeader = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"FinderToys is running", nil) action:nil keyEquivalent:@""];
+    [statusHeader setEnabled:NO];
+    [menu addItem:statusHeader];
+
     [menu addItem:[NSMenuItem separatorItem]];
 
-    // Toggle for Enter to open / F2 to rename
+    // --- 1. Finder Keyboard Shortcuts ---
     self.enterToOpenMenuItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Enter to open in Finder (F2 to rename)", nil)
                                                           action:@selector(toggleEnterToOpen:)
                                                    keyEquivalent:@""];
@@ -480,7 +491,6 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     self.enterToOpenMenuItem.state = [[NSUserDefaults standardUserDefaults] boolForKey:kEnterToOpenDefaultsKey] ? NSControlStateValueOn : NSControlStateValueOff;
     [menu addItem:self.enterToOpenMenuItem];
 
-    // Toggle for Paste Clipboard to file (⌘V)
     self.pasteClipboardMenuItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Paste Clipboard to file (⌘V)", nil)
                                                              action:@selector(togglePasteClipboard:)
                                                       keyEquivalent:@""];
@@ -488,7 +498,9 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     self.pasteClipboardMenuItem.state = [[NSUserDefaults standardUserDefaults] boolForKey:kPasteClipboardDefaultsKey] ? NSControlStateValueOn : NSControlStateValueOff;
     [menu addItem:self.pasteClipboardMenuItem];
 
-    // Toggle for Image Conversion
+    [menu addItem:[NSMenuItem separatorItem]];
+
+    // --- 2. Context Menu Converters ---
     self.imageConversionMenuItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Image Conversion (PNG / JPEG / HEIC)", nil)
                                                               action:@selector(toggleImageConversion:)
                                                        keyEquivalent:@""];
@@ -496,23 +508,6 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     self.imageConversionMenuItem.state = [AppDelegate isFeatureEnabled:kImageConversionDefaultsKey defaultVal:YES] ? NSControlStateValueOn : NSControlStateValueOff;
     [menu addItem:self.imageConversionMenuItem];
 
-    // Toggle for Trash Originals after conversion
-    self.trashOriginalsMenuItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Move original to Trash after conversion", nil)
-                                                             action:@selector(toggleTrashOriginals:)
-                                                      keyEquivalent:@""];
-    self.trashOriginalsMenuItem.target = self;
-    self.trashOriginalsMenuItem.state = [AppDelegate isFeatureEnabled:kTrashOriginalsDefaultsKey defaultVal:YES] ? NSControlStateValueOn : NSControlStateValueOff;
-    [menu addItem:self.trashOriginalsMenuItem];
-
-    // Toggle for PDF Tools
-    self.pdfToolsMenuItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"PDF Tools (Merge into PDF)", nil)
-                                                       action:@selector(togglePDFTools:)
-                                                keyEquivalent:@""];
-    self.pdfToolsMenuItem.target = self;
-    self.pdfToolsMenuItem.state = [AppDelegate isFeatureEnabled:kPDFToolsDefaultsKey defaultVal:YES] ? NSControlStateValueOn : NSControlStateValueOff;
-    [menu addItem:self.pdfToolsMenuItem];
-
-    // Toggle for Video Conversion
     self.videoConversionMenuItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Video Compression & Conversion", nil)
                                                               action:@selector(toggleVideoConversion:)
                                                        keyEquivalent:@""];
@@ -520,13 +515,39 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     self.videoConversionMenuItem.state = [AppDelegate isFeatureEnabled:kVideoConversionDefaultsKey defaultVal:YES] ? NSControlStateValueOn : NSControlStateValueOff;
     [menu addItem:self.videoConversionMenuItem];
 
+    self.pdfToolsMenuItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"PDF & Document Tools (Word / PDF)", nil)
+                                                       action:@selector(togglePDFTools:)
+                                                keyEquivalent:@""];
+    self.pdfToolsMenuItem.target = self;
+    self.pdfToolsMenuItem.state = [AppDelegate isFeatureEnabled:kPDFToolsDefaultsKey defaultVal:YES] ? NSControlStateValueOn : NSControlStateValueOff;
+    [menu addItem:self.pdfToolsMenuItem];
+
     [menu addItem:[NSMenuItem separatorItem]];
+
+    // --- 3. Conversion Options ---
+    self.trashOriginalsMenuItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Move original to Trash after conversion", nil)
+                                                             action:@selector(toggleTrashOriginals:)
+                                                      keyEquivalent:@""];
+    self.trashOriginalsMenuItem.target = self;
+    self.trashOriginalsMenuItem.state = [AppDelegate isFeatureEnabled:kTrashOriginalsDefaultsKey defaultVal:YES] ? NSControlStateValueOn : NSControlStateValueOff;
+    [menu addItem:self.trashOriginalsMenuItem];
+
+    [menu addItem:[NSMenuItem separatorItem]];
+
+    // --- 4. Accessibility Permission Status ---
+    self.accessibilityMenuItem = [[NSMenuItem alloc] initWithTitle:@"" action:nil keyEquivalent:@""];
+    [self updateAccessibilityMenuItemForTrusted:AXIsProcessTrusted()];
+    [menu addItem:self.accessibilityMenuItem];
+
+    [menu addItem:[NSMenuItem separatorItem]];
+
+    // --- 5. Quit ---
     [menu addItemWithTitle:NSLocalizedString(@"Quit", nil) action:@selector(terminate:) keyEquivalent:@"q"];
 
     self.statusItem.menu = menu;
 
-    // Start event tap for Enter/F2/Cmd+V
-    [self setupEventTap];
+    // Start event tap & key mappings based on current preferences
+    [self updateEventTapState];
 
     // Register application in Login Items as a background app
     if (@available(macOS 13.0, *)) {
@@ -547,9 +568,7 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     [[NSUserDefaults standardUserDefaults] setBool:newSetting forKey:kEnterToOpenDefaultsKey];
     self.enterToOpenMenuItem.state = newSetting ? NSControlStateValueOn : NSControlStateValueOff;
 
-    if (newSetting) {
-        [self setupEventTap];
-    }
+    [self updateEventTapState];
 }
 
 - (void)togglePasteClipboard:(id)sender {
@@ -558,8 +577,19 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     [[NSUserDefaults standardUserDefaults] setBool:newSetting forKey:kPasteClipboardDefaultsKey];
     self.pasteClipboardMenuItem.state = newSetting ? NSControlStateValueOn : NSControlStateValueOff;
 
-    if (newSetting) {
+    [self updateEventTapState];
+}
+
+- (void)updateEventTapState {
+    BOOL enterEnabled = [[NSUserDefaults standardUserDefaults] boolForKey:kEnterToOpenDefaultsKey];
+    BOOL pasteEnabled = [[NSUserDefaults standardUserDefaults] boolForKey:kPasteClipboardDefaultsKey];
+
+    [AppDelegate enableF2KeyMapping:enterEnabled];
+
+    if (enterEnabled || pasteEnabled) {
         [self setupEventTap];
+    } else {
+        [self tearDownEventTap];
     }
 }
 

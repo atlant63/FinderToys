@@ -8,7 +8,6 @@
 #import "FinderSync.h"
 #import <ImageIO/ImageIO.h>
 #import <PDFKit/PDFKit.h>
-#import <Quartz/Quartz.h>
 #import <AVFoundation/AVFoundation.h>
 
 static inline BOOL FTIsPreferenceEnabled(NSString *key, BOOL defaultVal) {
@@ -22,7 +21,24 @@ static inline NSSet<NSString *> *FTImageExtensions(void) {
     static NSSet *set = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        set = [NSSet setWithObjects:@"png", @"jpg", @"jpeg", @"webp", @"heic", @"heif", @"tiff", @"tif", @"bmp", @"gif", nil];
+        set = [NSSet setWithObjects:@"png", @"jpg", @"jpeg", @"webp", @"heic", @"heif", @"tiff", @"tif", @"bmp", nil];
+    });
+    return set;
+}
+
+static inline NSString *FTEscapeForAppleScriptShell(NSString *path) {
+    if (!path) return @"";
+    NSString *escaped = [path stringByReplacingOccurrencesOfString:@"\\" withString:@"\\\\"];
+    escaped = [escaped stringByReplacingOccurrencesOfString:@"\"" withString:@"\\\""];
+    escaped = [escaped stringByReplacingOccurrencesOfString:@"'" withString:@"'\\''"];
+    return escaped;
+}
+
+static inline NSSet<NSString *> *FTWordExtensions(void) {
+    static NSSet *set = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        set = [NSSet setWithObjects:@"docx", @"doc", @"rtf", @"rtfd", @"odt", nil];
     });
     return set;
 }
@@ -71,7 +87,7 @@ static NSImage *FTSymbolImage(NSString *name) {
         CGFloat w = sym.size.width;
         CGFloat h = sym.size.height;
         if (w > 18) { h = h * (18.0 / w); w = 18; }
-        if (h > 18) { h = h * (18.0 / h); h = 18; }
+        if (h > 18) { w = w * (18.0 / h); h = 18; }
         NSRect r = NSMakeRect((18.0 - w) / 2.0, (18.0 - h) / 2.0, w, h);
         [tintColor set];
         [sym drawInRect:r fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:1.0];
@@ -161,7 +177,11 @@ static inline NSString *FTLocalizedString(NSString *key) {
         [urls addObject:[NSURL fileURLWithPath:cloudStoragePath]];
     }
 
-    [FIFinderSyncController defaultController].directoryURLs = urls;
+    // Only update if the set actually changed — no unnecessary FIFinderSync reloads on every 3s tick
+    NSSet *currentURLs = [FIFinderSyncController defaultController].directoryURLs;
+    if (![currentURLs isEqualToSet:urls]) {
+        [FIFinderSyncController defaultController].directoryURLs = urls;
+    }
 }
 
 #pragma mark - Primary Finder Sync protocol methods
@@ -252,6 +272,7 @@ static inline NSString *FTLocalizedString(NSString *key) {
         NSMutableArray<NSURL *> *imageURLs = [NSMutableArray array];
         NSMutableArray<NSURL *> *pdfURLs = [NSMutableArray array];
         NSMutableArray<NSURL *> *videoURLs = [NSMutableArray array];
+        NSMutableArray<NSURL *> *wordURLs = [NSMutableArray array];
         for (NSURL *url in selectedURLs) {
             NSString *ext = url.pathExtension.lowercaseString;
             if ([FTImageExtensions() containsObject:ext]) {
@@ -260,6 +281,8 @@ static inline NSString *FTLocalizedString(NSString *key) {
                 [pdfURLs addObject:url];
             } else if ([FTVideoExtensions() containsObject:ext]) {
                 [videoURLs addObject:url];
+            } else if ([FTWordExtensions() containsObject:ext]) {
+                [wordURLs addObject:url];
             }
         }
 
@@ -267,71 +290,73 @@ static inline NSString *FTLocalizedString(NSString *key) {
         BOOL isPDFToolsEnabled = FTIsPreferenceEnabled(@"PDFToolsInFinder", YES);
         BOOL isVideoConvEnabled = FTIsPreferenceEnabled(@"VideoConversionInFinder", YES);
 
-        // A. Image Conversion Submenu (with Smart Format Filtering)
-        if (isImageConvEnabled && imageURLs.count > 0) {
-            BOOL allArePNG = YES;
-            BOOL allAreJPEG = YES;
-            BOOL allAreHEIC = YES;
+        // A. Image / PDF unified submenu
+        // Images: convert formats + (if 2+ files and PDF tools on) "Собрать в PDF" inside same submenu
+        // PDFs only: merge PDFs directly
+        if (imageURLs.count > 0) {
+            NSMenu *imageSubmenu = [[NSMenu alloc] initWithTitle:@""];
 
-            for (NSURL *url in imageURLs) {
-                NSString *ext = url.pathExtension.lowercaseString;
-                if (![ext isEqualToString:@"png"]) {
-                    allArePNG = NO;
+            if (isImageConvEnabled) {
+                BOOL allArePNG  = YES, allAreJPEG = YES, allAreHEIC = YES;
+                for (NSURL *url in imageURLs) {
+                    NSString *ext = url.pathExtension.lowercaseString;
+                    if (![ext isEqualToString:@"png"])  allArePNG  = NO;
+                    if (![ext isEqualToString:@"jpg"] && ![ext isEqualToString:@"jpeg"]) allAreJPEG = NO;
+                    if (![ext isEqualToString:@"heic"] && ![ext isEqualToString:@"heif"]) allAreHEIC = NO;
                 }
-                if (![ext isEqualToString:@"jpg"] && ![ext isEqualToString:@"jpeg"]) {
-                    allAreJPEG = NO;
+
+                // Format conversion items
+                if (!allArePNG) {
+                    NSMenuItem *pngItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"to PNG", nil) action:@selector(convertSelectedImagesToPNG:) keyEquivalent:@""];
+                    pngItem.image = FTSymbolImage(@"photo");
+                    [imageSubmenu addItem:pngItem];
                 }
-                if (![ext isEqualToString:@"heic"] && ![ext isEqualToString:@"heif"]) {
-                    allAreHEIC = NO;
+                if (!allAreJPEG) {
+                    NSMenuItem *jpegItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"to JPEG", nil) action:@selector(convertSelectedImagesToJPEG:) keyEquivalent:@""];
+                    jpegItem.image = FTSymbolImage(@"photo");
+                    [imageSubmenu addItem:jpegItem];
+                }
+                if (!allAreHEIC) {
+                    NSMenuItem *heicItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"to HEIC", nil) action:@selector(convertSelectedImagesToHEIC:) keyEquivalent:@""];
+                    heicItem.image = FTSymbolImage(@"photo");
+                    [imageSubmenu addItem:heicItem];
                 }
             }
 
-            NSMenu *convSubmenu = [[NSMenu alloc] initWithTitle:@""];
-
-            if (!allArePNG) {
-                NSMenuItem *pngItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"to PNG", nil) action:@selector(convertSelectedImagesToPNG:) keyEquivalent:@""];
-                pngItem.image = FTSymbolImage(@"photo");
-                [convSubmenu addItem:pngItem];
+            // PDF tools: "to PDF" for single item, "Combine into PDF" for 2+ items
+            if (isPDFToolsEnabled) {
+                NSUInteger totalForPDF = imageURLs.count + pdfURLs.count;
+                if (totalForPDF >= 1) {
+                    NSString *pdfTitle;
+                    if (totalForPDF == 1) {
+                        pdfTitle = NSLocalizedString(@"to PDF", nil);
+                    } else if (pdfURLs.count == totalForPDF) {
+                        pdfTitle = NSLocalizedString(@"Merge PDFs", nil);
+                    } else {
+                        pdfTitle = NSLocalizedString(@"Combine into PDF", nil);
+                    }
+                    NSMenuItem *combinePDFItem = [[NSMenuItem alloc] initWithTitle:pdfTitle action:@selector(combineSelectedIntoPDF:) keyEquivalent:@""];
+                    combinePDFItem.image = FTSymbolImage(totalForPDF == 1 ? @"doc" : @"doc.on.doc");
+                    [imageSubmenu addItem:combinePDFItem];
+                }
             }
 
-            if (!allAreJPEG) {
-                NSMenuItem *jpegItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"to JPEG", nil) action:@selector(convertSelectedImagesToJPEG:) keyEquivalent:@""];
-                jpegItem.image = FTSymbolImage(@"photo");
-                [convSubmenu addItem:jpegItem];
+            if (imageSubmenu.numberOfItems > 0) {
+                NSMenuItem *imageMainItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Images", nil) action:nil keyEquivalent:@""];
+                imageMainItem.image = FTSymbolImage(@"photo.on.rectangle");
+                imageMainItem.submenu = imageSubmenu;
+                [menu addItem:imageMainItem];
             }
-
-            if (!allAreHEIC) {
-                NSMenuItem *heicItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"to HEIC", nil) action:@selector(convertSelectedImagesToHEIC:) keyEquivalent:@""];
-                heicItem.image = FTSymbolImage(@"photo");
-                [convSubmenu addItem:heicItem];
-            }
-
-            if (convSubmenu.numberOfItems > 0) {
-                NSMenuItem *convMainItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Convert", nil) action:nil keyEquivalent:@""];
-                convMainItem.image = FTSymbolImage(@"arrow.triangle.2.circlepath");
-                convMainItem.submenu = convSubmenu;
-                [menu addItem:convMainItem];
-            }
+        } else if (isPDFToolsEnabled && pdfURLs.count >= 2) {
+            // Pure PDFs with no images: show Merge PDFs as standalone (no image submenu needed)
+            NSMenuItem *mergePDFItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Merge PDFs", nil) action:@selector(combineSelectedIntoPDF:) keyEquivalent:@""];
+            mergePDFItem.image = FTSymbolImage(@"doc.on.doc");
+            [menu addItem:mergePDFItem];
         }
 
-        // B. PDF Actions (Only show when 2 or more files are selected!)
-        if (isPDFToolsEnabled) {
-            NSUInteger totalCount = imageURLs.count + pdfURLs.count;
-            if (totalCount >= 2) {
-                NSString *title = (pdfURLs.count == totalCount) ?
-                    NSLocalizedString(@"Merge PDFs", nil) :
-                    NSLocalizedString(@"Combine into PDF", nil);
-
-                NSMenuItem *combinePDFItem = [[NSMenuItem alloc] initWithTitle:title action:@selector(combineSelectedIntoPDF:) keyEquivalent:@""];
-                combinePDFItem.image = FTSymbolImage(@"doc.on.doc");
-                [menu addItem:combinePDFItem];
-            }
-        }
-
-        // C. Video Actions (shown when video files selected, no mix with other types)
+        // B. Video submenu — compress + convert formats + GIF
         if (isVideoConvEnabled && videoURLs.count > 0 && imageURLs.count == 0 && pdfURLs.count == 0) {
-            BOOL allAreMP4 = YES;
-            BOOL allAreMOV = YES;
+            BOOL allAreMP4 = YES, allAreMOV = YES;
             for (NSURL *url in videoURLs) {
                 NSString *ext = url.pathExtension.lowercaseString;
                 if (![ext isEqualToString:@"mp4"]) allAreMP4 = NO;
@@ -340,31 +365,68 @@ static inline NSString *FTLocalizedString(NSString *key) {
 
             NSMenu *videoSubmenu = [[NSMenu alloc] initWithTitle:@""];
 
-            // Compress: always shown (H.264 1080p — equivalent of your ffmpeg CRF 22)
-            NSMenuItem *compressItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Compress Video (H.264)", nil) action:@selector(compressSelectedVideos:) keyEquivalent:@""];
+            // Compress (always shown — H.264 CRF 22 via ffmpeg)
+            NSMenuItem *compressItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Compress (H.264)", nil) action:@selector(compressSelectedVideos:) keyEquivalent:@""];
             compressItem.image = FTSymbolImage(@"arrow.down.doc");
             [videoSubmenu addItem:compressItem];
 
-            // Convert to MP4 — shown only if not already all MP4
+            // Format conversion — smart filtering
             if (!allAreMP4) {
                 NSMenuItem *mp4Item = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"to MP4", nil) action:@selector(convertSelectedVideosToMP4:) keyEquivalent:@""];
                 mp4Item.image = FTSymbolImage(@"film");
                 [videoSubmenu addItem:mp4Item];
             }
-
-            // Convert to MOV — shown only if not already all MOV
             if (!allAreMOV) {
                 NSMenuItem *movItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"to MOV", nil) action:@selector(convertSelectedVideosToMOV:) keyEquivalent:@""];
                 movItem.image = FTSymbolImage(@"film");
                 [videoSubmenu addItem:movItem];
             }
-
-            if (videoSubmenu.numberOfItems > 0) {
-                NSMenuItem *videoMainItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Video", nil) action:nil keyEquivalent:@""];
-                videoMainItem.image = FTSymbolImage(@"video");
-                videoMainItem.submenu = videoSubmenu;
-                [menu addItem:videoMainItem];
+            // GIF — available if ffmpeg is installed (no audio)
+            if ([FinderSync ffmpegPath]) {
+                NSMenuItem *gifItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"to GIF", nil) action:@selector(convertSelectedVideosToGIF:) keyEquivalent:@""];
+                gifItem.image = FTSymbolImage(@"sparkles.rectangle.stack");
+                [videoSubmenu addItem:gifItem];
             }
+
+            NSMenuItem *videoMainItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Video", nil) action:nil keyEquivalent:@""];
+            videoMainItem.image = FTSymbolImage(@"video");
+            videoMainItem.submenu = videoSubmenu;
+            [menu addItem:videoMainItem];
+        }
+
+        // C. Word (.docx, .doc, .rtf, .odt) conversion submenu
+        if (isPDFToolsEnabled && wordURLs.count > 0 && imageURLs.count == 0 && videoURLs.count == 0) {
+            BOOL allAreDOCX = YES;
+            for (NSURL *url in wordURLs) {
+                if (![url.pathExtension.lowercaseString isEqualToString:@"docx"]) {
+                    allAreDOCX = NO;
+                    break;
+                }
+            }
+
+            NSMenu *wordSubmenu = [[NSMenu alloc] initWithTitle:@""];
+
+            // 1. to PDF (always available)
+            NSMenuItem *pdfItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"to PDF", nil) action:@selector(convertSelectedWordToPDF:) keyEquivalent:@""];
+            pdfItem.image = FTSymbolImage(@"doc");
+            [wordSubmenu addItem:pdfItem];
+
+            // 2. to TXT (plain text extract)
+            NSMenuItem *txtItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"to TXT", nil) action:@selector(convertSelectedWordToTXT:) keyEquivalent:@""];
+            txtItem.image = FTSymbolImage(@"doc.text");
+            [wordSubmenu addItem:txtItem];
+
+            // 4. to DOCX (if source is .doc, .rtf, .odt)
+            if (!allAreDOCX) {
+                NSMenuItem *docxItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"to DOCX", nil) action:@selector(convertSelectedWordToDOCX:) keyEquivalent:@""];
+                docxItem.image = FTSymbolImage(@"doc.richtext");
+                [wordSubmenu addItem:docxItem];
+            }
+
+            NSMenuItem *wordMainItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Convert", nil) action:nil keyEquivalent:@""];
+            wordMainItem.image = FTSymbolImage(@"arrow.triangle.2.circlepath");
+            wordMainItem.submenu = wordSubmenu;
+            [menu addItem:wordMainItem];
         }
     }
 
@@ -467,35 +529,27 @@ static inline NSString *FTLocalizedString(NSString *key) {
 // Function to open Terminal at current directory or directory of selected item
 - (void)openTerminalAtPath:(id)sender {
     NSURL *dirURL = [self targetDirectoryURL];
+    if (!dirURL) return;
 
-    if (!dirURL || !dirURL.path) {
-        NSLog(@"No target URL for Terminal");
-        return;
-    }
+    NSURL *terminalAppURL = [[NSWorkspace sharedWorkspace] URLForApplicationWithBundleIdentifier:@"com.apple.Terminal"];
+    if (!terminalAppURL) return;
 
-    NSString *path = dirURL.path;
-    NSString *escapedPath = [path stringByReplacingOccurrencesOfString:@"'" withString:@"'\\''"];
-
-    NSString *scriptSource = [NSString stringWithFormat:
-        @"do shell script \"open -a Terminal '%@'\"", escapedPath];
-
-    NSAppleScript *script = [[NSAppleScript alloc] initWithSource:scriptSource];
-    NSDictionary *errorDict = nil;
-    [script executeAndReturnError:&errorDict];
-
-    if (errorDict) {
-        NSLog(@"Failed to open Terminal: %@", errorDict);
-    } else {
-        NSLog(@"Opened Terminal at: %@", path);
-    }
+    // Open Terminal.app directly via NSWorkspace — safe with any path, no string injection
+    NSWorkspaceOpenConfiguration *config = [NSWorkspaceOpenConfiguration configuration];
+    config.activates = YES;
+    [[NSWorkspace sharedWorkspace] openURLs:@[dirURL]
+                    withApplicationAtURL:terminalAppURL
+                           configuration:config
+                       completionHandler:nil];
 }
+
 
 // Function to create new Word document
 - (void)createNewWordDocument:(id)sender {
     NSURL *targetURL = [self targetDirectoryURL];
 
     if (!targetURL) {
-        NSLog(@"No target URL");\
+        NSLog(@"No target URL");
         return;
     }
 
@@ -516,7 +570,7 @@ static inline NSString *FTLocalizedString(NSString *key) {
     // Create blank .docx using shell script
     // .docx is a zip file containing XML files
     // Includes styles.xml for Calibri 11pt default font
-    NSString *escapedPath = [filePath stringByReplacingOccurrencesOfString:@"'" withString:@"'\\''"];
+    NSString *escapedPath = FTEscapeForAppleScriptShell(filePath);
 
     NSString *scriptSource = [NSString stringWithFormat:
         @"do shell script \""
@@ -624,7 +678,7 @@ static inline NSString *FTLocalizedString(NSString *key) {
 
     // Create blank .pptx using shell script
     // .pptx is a zip file containing XML files
-    NSString *escapedPath = [filePath stringByReplacingOccurrencesOfString:@"'" withString:@"'\\''"];
+    NSString *escapedPath = FTEscapeForAppleScriptShell(filePath);
 
     NSString *scriptSource = [NSString stringWithFormat:
         @"do shell script \""
@@ -685,8 +739,8 @@ static inline NSString *FTLocalizedString(NSString *key) {
     }
 
     // Copy template to destination using AppleScript (to bypass sandbox)
-    NSString *escapedTemplate = [templatePath stringByReplacingOccurrencesOfString:@"'" withString:@"'\\''"];
-    NSString *escapedDest = [filePath stringByReplacingOccurrencesOfString:@"'" withString:@"'\\''"];
+    NSString *escapedTemplate = FTEscapeForAppleScriptShell(templatePath);
+    NSString *escapedDest = FTEscapeForAppleScriptShell(filePath);
 
     NSString *scriptSource = [NSString stringWithFormat:
         @"do shell script \"cp -R '%@' '%@'\"", escapedTemplate, escapedDest];
@@ -737,8 +791,8 @@ static inline NSString *FTLocalizedString(NSString *key) {
     }
 
     // Copy template to destination using AppleScript (to bypass sandbox)
-    NSString *escapedTemplate = [templatePath stringByReplacingOccurrencesOfString:@"'" withString:@"'\\''"];
-    NSString *escapedDest = [filePath stringByReplacingOccurrencesOfString:@"'" withString:@"'\\''"];
+    NSString *escapedTemplate = FTEscapeForAppleScriptShell(templatePath);
+    NSString *escapedDest = FTEscapeForAppleScriptShell(filePath);
 
     NSString *scriptSource = [NSString stringWithFormat:
         @"do shell script \"cp -R '%@' '%@'\"", escapedTemplate, escapedDest];
@@ -789,8 +843,8 @@ static inline NSString *FTLocalizedString(NSString *key) {
     }
 
     // Copy template to destination using AppleScript (to bypass sandbox)
-    NSString *escapedTemplate = [templatePath stringByReplacingOccurrencesOfString:@"'" withString:@"'\\''"];
-    NSString *escapedDest = [filePath stringByReplacingOccurrencesOfString:@"'" withString:@"'\\''"];
+    NSString *escapedTemplate = FTEscapeForAppleScriptShell(templatePath);
+    NSString *escapedDest = FTEscapeForAppleScriptShell(filePath);
 
     NSString *scriptSource = [NSString stringWithFormat:
         @"do shell script \"cp -R '%@' '%@'\"", escapedTemplate, escapedDest];
@@ -847,7 +901,7 @@ static inline NSString *FTLocalizedString(NSString *key) {
     }
 
     // Use AppleScript to create a new file and bypass sandboxing permissions
-    NSString *escapedPath = [filePath stringByReplacingOccurrencesOfString:@"'" withString:@"'\\''"];
+    NSString *escapedPath = FTEscapeForAppleScriptShell(filePath);
     NSString *scriptSource;
     if (content && content.length > 0) {
         NSString *escapedContent = [content stringByReplacingOccurrencesOfString:@"\\" withString:@"\\\\"];
@@ -874,6 +928,8 @@ static inline NSString *FTLocalizedString(NSString *key) {
 
 
 #pragma mark - Image & PDF Operations
+
+
 
 + (BOOL)convertImageAtURL:(NSURL *)sourceURL toType:(CFStringRef)destType outputExtension:(NSString *)newExt createdURL:(NSURL **)outURL quality:(NSNumber *)quality {
     CGImageSourceRef source = CGImageSourceCreateWithURL((__bridge CFURLRef)sourceURL, NULL);
@@ -946,23 +1002,25 @@ static inline NSString *FTLocalizedString(NSString *key) {
 
     NSUInteger pageIdx = 0;
     for (NSURL *url in urls) {
-        NSString *ext = url.pathExtension.lowercaseString;
-        if ([ext isEqualToString:@"pdf"]) {
-            PDFDocument *srcDoc = [[PDFDocument alloc] initWithURL:url];
-            if (srcDoc) {
-                for (NSUInteger i = 0; i < srcDoc.pageCount; i++) {
-                    PDFPage *p = [srcDoc pageAtIndex:i];
-                    if (p) {
-                        [pdfDoc insertPage:p atIndex:pageIdx++];
+        @autoreleasepool {
+            NSString *ext = url.pathExtension.lowercaseString;
+            if ([ext isEqualToString:@"pdf"]) {
+                PDFDocument *srcDoc = [[PDFDocument alloc] initWithURL:url];
+                if (srcDoc) {
+                    for (NSUInteger i = 0; i < srcDoc.pageCount; i++) {
+                        PDFPage *p = [srcDoc pageAtIndex:i];
+                        if (p) {
+                            [pdfDoc insertPage:p atIndex:pageIdx++];
+                        }
                     }
                 }
-            }
-        } else if ([FTImageExtensions() containsObject:ext]) {
-            NSImage *img = [[NSImage alloc] initWithContentsOfURL:url];
-            if (img) {
-                PDFPage *page = [[PDFPage alloc] initWithImage:img];
-                if (page) {
-                    [pdfDoc insertPage:page atIndex:pageIdx++];
+            } else if ([FTImageExtensions() containsObject:ext]) {
+                NSImage *img = [[NSImage alloc] initWithContentsOfURL:url];
+                if (img) {
+                    PDFPage *page = [[PDFPage alloc] initWithImage:img];
+                    if (page) {
+                        [pdfDoc insertPage:page atIndex:pageIdx++];
+                    }
                 }
             }
         }
@@ -977,31 +1035,6 @@ static inline NSString *FTLocalizedString(NSString *key) {
     return nil;
 }
 
-+ (NSURL *)compressPDFAtURL:(NSURL *)pdfURL {
-    PDFDocument *srcDoc = [[PDFDocument alloc] initWithURL:pdfURL];
-    if (!srcDoc || srcDoc.pageCount == 0) return nil;
-
-    NSString *dir = pdfURL.URLByDeletingLastPathComponent.path;
-    NSString *base = [pdfURL.lastPathComponent stringByDeletingPathExtension];
-    NSString *newName = [base stringByAppendingString:@"_compressed"];
-
-    NSString *destPath = [dir stringByAppendingPathComponent:[NSString stringWithFormat:@"%@.pdf", newName]];
-    NSFileManager *fm = [NSFileManager defaultManager];
-    int counter = 1;
-    while ([fm fileExistsAtPath:destPath]) {
-        destPath = [dir stringByAppendingPathComponent:[NSString stringWithFormat:@"%@ (%d).pdf", newName, counter]];
-        counter++;
-    }
-
-    NSURL *filterURL = [NSURL fileURLWithPath:@"/System/Library/Filters/Reduce File Size.qfilter"];
-    QuartzFilter *filter = [QuartzFilter quartzFilterWithURL:filterURL];
-    NSDictionary *options = filter ? @{ @"QuartzFilter": filter } : @{};
-
-    if ([srcDoc writeToFile:destPath withOptions:options]) {
-        return [NSURL fileURLWithPath:destPath];
-    }
-    return nil;
-}
 
 - (void)convertSelectedImagesToPNG:(id)sender {
     [self convertSelectedImagesToType:CFSTR("public.png") extension:@"png" quality:nil];
@@ -1015,42 +1048,42 @@ static inline NSString *FTLocalizedString(NSString *key) {
     [self convertSelectedImagesToType:CFSTR("public.heic") extension:@"heic" quality:nil];
 }
 
-- (void)compressSelectedImages:(id)sender {
-    [self convertSelectedImagesToType:CFSTR("public.jpeg") extension:@"jpg" quality:@(0.75)];
-}
 
 - (void)convertSelectedImagesToType:(CFStringRef)destType extension:(NSString *)ext quality:(NSNumber *)quality {
     NSArray<NSURL *> *selectedURLs = [[FIFinderSyncController defaultController] selectedItemURLs];
     if (selectedURLs.count == 0) return;
 
     BOOL trashOriginals = FTIsPreferenceEnabled(@"TrashOriginalsAfterConversionInFinder", YES);
-    NSMutableArray<NSURL *> *createdURLs = [NSMutableArray array];
-    NSMutableArray<NSURL *> *trashedURLs = [NSMutableArray array];
+    // Copy type string across thread boundary
+    NSString *destTypeStr = (__bridge NSString *)destType;
 
-    for (NSURL *sourceURL in selectedURLs) {
-        NSString *sourceExt = sourceURL.pathExtension.lowercaseString;
-        if (![FTImageExtensions() containsObject:sourceExt]) continue;
+    // Run conversion on background queue to avoid blocking Finder's main thread
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        NSMutableArray<NSURL *> *trashedURLs = [NSMutableArray array];
 
-        NSURL *outURL = nil;
-        if ([FinderSync convertImageAtURL:sourceURL toType:destType outputExtension:ext createdURL:&outURL quality:quality]) {
-            if (outURL) {
-                [createdURLs addObject:outURL];
-                if (trashOriginals && ![sourceURL.path isEqualToString:outURL.path]) {
-                    [trashedURLs addObject:sourceURL];
+        for (NSURL *sourceURL in selectedURLs) {
+            @autoreleasepool {
+                NSString *sourceExt = sourceURL.pathExtension.lowercaseString;
+                if (![FTImageExtensions() containsObject:sourceExt]) continue;
+
+                NSURL *outURL = nil;
+                if ([FinderSync convertImageAtURL:sourceURL
+                                           toType:(__bridge CFStringRef)destTypeStr
+                                  outputExtension:ext
+                                       createdURL:&outURL
+                                          quality:quality]) {
+                    if (outURL && trashOriginals && ![sourceURL.path isEqualToString:outURL.path]) {
+                        [trashedURLs addObject:sourceURL];
+                    }
                 }
             }
         }
-    }
 
-    // Move successfully converted originals to Trash
-    if (trashedURLs.count > 0) {
+        // Move originals to Trash after all conversions done
         for (NSURL *u in trashedURLs) {
             [[NSFileManager defaultManager] trashItemAtURL:u resultingItemURL:nil error:nil];
         }
-    }
-
-    // converted files created silently — no Finder activation
-    (void)createdURLs;
+    });
 }
 
 - (void)combineSelectedIntoPDF:(id)sender {
@@ -1062,25 +1095,165 @@ static inline NSString *FTLocalizedString(NSString *key) {
         targetDir = selectedURLs.firstObject.URLByDeletingLastPathComponent;
     }
 
-    NSURL *createdPDF = [FinderSync createPDFFromItems:selectedURLs inDirectory:targetDir.path];
-    // PDF created silently — no Finder activation
-    (void)createdPDF;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        [FinderSync createPDFFromItems:selectedURLs inDirectory:targetDir.path];
+    });
 }
 
-- (void)compressSelectedPDF:(id)sender {
+
+
++ (BOOL)convertWordDocumentAtURL:(NSURL *)sourceURL toURL:(NSURL *)destURL {
+    NSError *err = nil;
+    NSDictionary *docAttrs = nil;
+    NSAttributedString *attrStr = [[NSAttributedString alloc] initWithURL:sourceURL
+                                                                  options:@{}
+                                                       documentAttributes:&docAttrs
+                                                                    error:&err];
+    if (!attrStr) {
+        NSDictionary *options = @{ NSDocumentTypeDocumentAttribute: NSPlainTextDocumentType };
+        attrStr = [[NSAttributedString alloc] initWithURL:sourceURL options:options documentAttributes:nil error:nil];
+        if (!attrStr) return NO;
+    }
+
+    CGFloat pageWidth = 595.0; // Standard A4 (210 x 297 mm in points)
+    CGFloat pageHeight = 842.0;
+    CGFloat marginX = 40.0;
+    CGFloat marginY = 50.0;
+    CGSize contentSize = CGSizeMake(pageWidth - 2 * marginX, pageHeight - 2 * marginY);
+
+    NSTextStorage *storage = [[NSTextStorage alloc] initWithAttributedString:attrStr];
+    NSLayoutManager *layout = [[NSLayoutManager alloc] init];
+    [storage addLayoutManager:layout];
+
+    PDFDocument *pdfDoc = [[PDFDocument alloc] init];
+    NSUInteger pageIndex = 0;
+    NSUInteger glyphIndex = 0;
+
+    while (glyphIndex < layout.numberOfGlyphs) {
+        @autoreleasepool {
+            NSTextContainer *container = [[NSTextContainer alloc] initWithContainerSize:contentSize];
+            container.widthTracksTextView = NO;
+            container.heightTracksTextView = NO;
+            [layout addTextContainer:container];
+
+            NSTextView *textView = [[NSTextView alloc] initWithFrame:NSMakeRect(0, 0, contentSize.width, contentSize.height) textContainer:container];
+            textView.drawsBackground = NO;
+
+            NSView *pageView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, pageWidth, pageHeight)];
+            [pageView addSubview:textView];
+            [textView setFrameOrigin:NSMakePoint(marginX, marginY)];
+
+            NSData *pagePDFData = [pageView dataWithPDFInsideRect:NSMakeRect(0, 0, pageWidth, pageHeight)];
+            if (pagePDFData) {
+                PDFDocument *singlePageDoc = [[PDFDocument alloc] initWithData:pagePDFData];
+                if (singlePageDoc && singlePageDoc.pageCount > 0) {
+                    PDFPage *p = [singlePageDoc pageAtIndex:0];
+                    if (p) {
+                        [pdfDoc insertPage:p atIndex:pageIndex++];
+                    }
+                }
+            }
+
+            NSRange glyphRange = [layout glyphRangeForTextContainer:container];
+            if (glyphRange.length == 0) break;
+            glyphIndex += glyphRange.length;
+        }
+    }
+
+    if (pdfDoc.pageCount == 0) {
+        NSView *emptyView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, pageWidth, pageHeight)];
+        NSData *emptyData = [emptyView dataWithPDFInsideRect:NSMakeRect(0, 0, pageWidth, pageHeight)];
+        if (emptyData) {
+            PDFDocument *emptyDoc = [[PDFDocument alloc] initWithData:emptyData];
+            if (emptyDoc.pageCount > 0) {
+                [pdfDoc insertPage:[emptyDoc pageAtIndex:0] atIndex:0];
+            }
+        }
+    }
+
+    return [pdfDoc writeToURL:destURL];
+}
+
++ (BOOL)convertWordDocumentAtURL:(NSURL *)sourceURL toPlainTextURL:(NSURL *)destURL {
+    NSError *err = nil;
+    NSAttributedString *attrStr = [[NSAttributedString alloc] initWithURL:sourceURL options:@{} documentAttributes:nil error:&err];
+    if (!attrStr || attrStr.length == 0) return NO;
+    return [attrStr.string writeToURL:destURL atomically:YES encoding:NSUTF8StringEncoding error:nil];
+}
+
++ (BOOL)convertWordDocumentAtURL:(NSURL *)sourceURL toDocxURL:(NSURL *)destURL {
+    NSError *err = nil;
+    NSAttributedString *attrStr = [[NSAttributedString alloc] initWithURL:sourceURL options:@{} documentAttributes:nil error:&err];
+    if (!attrStr || attrStr.length == 0) return NO;
+    NSData *docxData = [attrStr dataFromRange:NSMakeRange(0, attrStr.length)
+                            documentAttributes:@{NSDocumentTypeDocumentAttribute: NSOfficeOpenXMLTextDocumentType}
+                                         error:&err];
+    if (!docxData) return NO;
+    return [docxData writeToURL:destURL atomically:YES];
+}
+
+- (void)convertSelectedWordToPDF:(id)sender {
     NSArray<NSURL *> *selectedURLs = [[FIFinderSyncController defaultController] selectedItemURLs];
     if (selectedURLs.count == 0) return;
 
-    NSMutableArray<NSURL *> *createdURLs = [NSMutableArray array];
-    for (NSURL *url in selectedURLs) {
-        if (![url.pathExtension.lowercaseString isEqualToString:@"pdf"]) continue;
-        NSURL *compressed = [FinderSync compressPDFAtURL:url];
-        if (compressed) {
-            [createdURLs addObject:compressed];
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        for (NSURL *sourceURL in selectedURLs) {
+            @autoreleasepool {
+                NSString *ext = sourceURL.pathExtension.lowercaseString;
+                if (![FTWordExtensions() containsObject:ext]) continue;
+
+                NSString *dir = sourceURL.URLByDeletingLastPathComponent.path;
+                NSString *baseName = [sourceURL.lastPathComponent stringByDeletingPathExtension];
+                NSString *destPath = [FinderSync uniqueVideoPathInDirectory:dir baseName:baseName extension:@"pdf"];
+                NSURL *destURL = [NSURL fileURLWithPath:destPath];
+
+                [FinderSync convertWordDocumentAtURL:sourceURL toURL:destURL];
+            }
         }
-    }
-    // compressed silently — no Finder activation
-    (void)createdURLs;
+    });
+}
+
+- (void)convertSelectedWordToTXT:(id)sender {
+    NSArray<NSURL *> *selectedURLs = [[FIFinderSyncController defaultController] selectedItemURLs];
+    if (selectedURLs.count == 0) return;
+
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        for (NSURL *sourceURL in selectedURLs) {
+            @autoreleasepool {
+                NSString *ext = sourceURL.pathExtension.lowercaseString;
+                if (![FTWordExtensions() containsObject:ext]) continue;
+
+                NSString *dir = sourceURL.URLByDeletingLastPathComponent.path;
+                NSString *baseName = [sourceURL.lastPathComponent stringByDeletingPathExtension];
+                NSString *destPath = [FinderSync uniqueVideoPathInDirectory:dir baseName:baseName extension:@"txt"];
+                NSURL *destURL = [NSURL fileURLWithPath:destPath];
+
+                [FinderSync convertWordDocumentAtURL:sourceURL toPlainTextURL:destURL];
+            }
+        }
+    });
+}
+
+- (void)convertSelectedWordToDOCX:(id)sender {
+    NSArray<NSURL *> *selectedURLs = [[FIFinderSyncController defaultController] selectedItemURLs];
+    if (selectedURLs.count == 0) return;
+
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        for (NSURL *sourceURL in selectedURLs) {
+            @autoreleasepool {
+                NSString *ext = sourceURL.pathExtension.lowercaseString;
+                if (![FTWordExtensions() containsObject:ext]) continue;
+                if ([ext isEqualToString:@"docx"]) continue;
+
+                NSString *dir = sourceURL.URLByDeletingLastPathComponent.path;
+                NSString *baseName = [sourceURL.lastPathComponent stringByDeletingPathExtension];
+                NSString *destPath = [FinderSync uniqueVideoPathInDirectory:dir baseName:baseName extension:@"docx"];
+                NSURL *destURL = [NSURL fileURLWithPath:destPath];
+
+                [FinderSync convertWordDocumentAtURL:sourceURL toDocxURL:destURL];
+            }
+        }
+    });
 }
 
 
@@ -1113,7 +1286,7 @@ static inline NSString *FTLocalizedString(NSString *key) {
     AVAssetExportSession *session = [AVAssetExportSession exportSessionWithAsset:asset presetName:presetName];
     if (!session) {
         NSError *err = [NSError errorWithDomain:@"FinderToys" code:1 userInfo:@{NSLocalizedDescriptionKey: @"Cannot create export session for this file"}];
-        completion(nil, err);
+        if (completion) completion(nil, err);
         return;
     }
     session.outputURL = outURL;
@@ -1122,205 +1295,113 @@ static inline NSString *FTLocalizedString(NSString *key) {
 
     [session exportAsynchronouslyWithCompletionHandler:^{
         if (session.status == AVAssetExportSessionStatusCompleted) {
-            completion(outURL, nil);
+            if (completion) completion(outURL, nil);
         } else {
             [[NSFileManager defaultManager] removeItemAtURL:outURL error:nil];
-            completion(nil, session.error);
+            if (completion) completion(nil, session.error);
         }
     }];
 }
 
-// Real compression via AVAssetWriter — explicit H.264 bitrate control
-// Equivalent to: ffmpeg -c:v libx264 -preset fast -crf 22 -c:a aac -b:a 128k
-+ (void)compressVideoWithAssetWriter:(NSURL *)sourceURL
-                    completionHandler:(void (^)(NSURL *outURL, NSError *error))completion {
+// Real compression via NSTask — uses ffmpeg (same args as user's shell script) or avconvert fallback
+// avoids threading/semaphore deadlocks that crash the FinderSync extension process
++ (NSString *)ffmpegPath {
+    static NSString *cached = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSArray<NSString *> *candidates = @[
+            @"/opt/homebrew/bin/ffmpeg",   // Apple Silicon Homebrew
+            @"/usr/local/bin/ffmpeg",       // Intel Homebrew
+            @"/usr/bin/ffmpeg",             // system (rare)
+        ];
+        for (NSString *p in candidates) {
+            if ([[NSFileManager defaultManager] fileExistsAtPath:p]) {
+                cached = p;
+                break;
+            }
+        }
+    });
+    return cached;
+}
 
-    AVURLAsset *asset = [AVURLAsset URLAssetWithURL:sourceURL options:nil];
++ (void)compressVideoAtURL:(NSURL *)sourceURL
+         completionHandler:(void (^)(NSURL *outURL, NSError *error))completion {
+
     NSString *dir = sourceURL.URLByDeletingLastPathComponent.path;
     NSString *base = [sourceURL.lastPathComponent stringByDeletingPathExtension];
-    NSString *outPath = [FinderSync uniqueVideoPathInDirectory:dir baseName:[base stringByAppendingString:@"_compressed"] extension:@"mp4"];
+    NSString *outPath = [FinderSync uniqueVideoPathInDirectory:dir
+                                                     baseName:[base stringByAppendingString:@"_compressed"]
+                                                    extension:@"mp4"];
+    NSString *ffmpeg = [self ffmpegPath];
+
+    NSTask *task = [[NSTask alloc] init];
+
+    if (ffmpeg) {
+        // Exact same as: ffmpeg -nostats -loglevel error -y -i "$f" -map 0 -c:v libx264 -preset fast -tune film
+        //                -crf 22 -pix_fmt yuv420p -movflags +faststart -c:a aac -b:a 128k "$out"
+        task.executableURL = [NSURL fileURLWithPath:ffmpeg];
+        task.arguments = @[
+            @"-nostats",
+            @"-loglevel", @"error",
+            @"-y",                // overwrite if exists (shouldn't happen due to uniquePath)
+            @"-i", sourceURL.path,
+            @"-map", @"0",
+            @"-c:v", @"libx264",
+            @"-preset", @"fast",
+            @"-tune", @"film",
+            @"-crf", @"22",
+            @"-pix_fmt", @"yuv420p",
+            @"-movflags", @"+faststart",
+            @"-c:a", @"aac",
+            @"-b:a", @"128k",
+            outPath
+        ];
+    } else {
+        // Fallback: avconvert (built into macOS, no extra install needed)
+        task.executableURL = [NSURL fileURLWithPath:@"/usr/bin/avconvert"];
+        task.arguments = @[
+            @"-i", sourceURL.path,
+            @"-o", outPath,
+            @"-p", @"AVAssetExportPreset1920x1080"
+        ];
+    }
+
+    // Suppress stdout/stderr via /dev/null — runs silently without filling pipe buffers
+    task.standardOutput = [NSFileHandle fileHandleWithNullDevice];
+    task.standardError  = [NSFileHandle fileHandleWithNullDevice];
+
     NSURL *outURL = [NSURL fileURLWithPath:outPath];
-
-    // Load tracks
-    // Use loadValuesAsynchronouslyForKeys to avoid deprecated synchronous track loading on macOS 15+
-    dispatch_semaphore_t loadSem = dispatch_semaphore_create(0);
-    [asset loadValuesAsynchronouslyForKeys:@[@"tracks"] completionHandler:^{ dispatch_semaphore_signal(loadSem); }];
-    dispatch_semaphore_wait(loadSem, DISPATCH_TIME_FOREVER);
-
-    NSError *trackError = nil;
-    AVKeyValueStatus status = [asset statusOfValueForKey:@"tracks" error:&trackError];
-    if (status != AVKeyValueStatusLoaded) {
-        completion(nil, trackError ?: [NSError errorWithDomain:@"FinderToys" code:3 userInfo:@{NSLocalizedDescriptionKey: @"Failed to load asset tracks"}]);
-        return;
-    }
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    AVAssetTrack *videoTrack = [[asset tracksWithMediaType:AVMediaTypeVideo] firstObject];
-    AVAssetTrack *audioTrack = [[asset tracksWithMediaType:AVMediaTypeAudio] firstObject];
-#pragma clang diagnostic pop
-
-    if (!videoTrack) {
-        completion(nil, [NSError errorWithDomain:@"FinderToys" code:2 userInfo:@{NSLocalizedDescriptionKey: @"No video track found"}]);
-        return;
-    }
-
-    // ---- Determine target bitrate ----
-    // Adaptive: ~6 Mbps for 1080p, scales with pixel count (mirrors CRF 22 libx264)
-    CGSize naturalSize = videoTrack.naturalSize;
-    CGAffineTransform t = videoTrack.preferredTransform;
-    CGSize displaySize = CGSizeApplyAffineTransform(naturalSize, t);
-    CGFloat w = ABS(displaySize.width);
-    CGFloat h = ABS(displaySize.height);
-    if (w == 0 || h == 0) { w = naturalSize.width; h = naturalSize.height; }
-
-    CGFloat megapixels = (w * h) / 1000000.0;
-    // 6 Mbps @ 2.07 MP (1080p), linear scale clamped to 2–40 Mbps
-    NSInteger videoBitrate = (NSInteger)MAX(2000000, MIN(40000000, megapixels * 2896000));
-
-    NSDictionary *videoSettings = @{
-        AVVideoCodecKey: AVVideoCodecTypeH264,
-        AVVideoWidthKey: @(naturalSize.width),
-        AVVideoHeightKey: @(naturalSize.height),
-        AVVideoCompressionPropertiesKey: @{
-            AVVideoAverageBitRateKey: @(videoBitrate),
-            AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel,
-            AVVideoH264EntropyModeKey: AVVideoH264EntropyModeCABAC,
-            AVVideoMaxKeyFrameIntervalKey: @60,
-            AVVideoAllowFrameReorderingKey: @YES,
+    task.terminationHandler = ^(NSTask *t) {
+        if (t.terminationStatus == 0) {
+            if (completion) completion(outURL, nil);
+        } else {
+            [[NSFileManager defaultManager] removeItemAtPath:outPath error:nil];
+            if (completion) {
+                completion(nil, [NSError errorWithDomain:@"FinderToys"
+                                                    code:t.terminationStatus
+                                                userInfo:@{NSLocalizedDescriptionKey: ffmpeg ? @"ffmpeg error" : @"avconvert error"}]);
+            }
         }
     };
 
-    NSDictionary *audioSettings = @{
-        AVFormatIDKey: @(kAudioFormatMPEG4AAC),
-        AVSampleRateKey: @44100,
-        AVNumberOfChannelsKey: @2,
-        AVEncoderBitRateKey: @128000,
-    };
-
-    // ---- Setup reader ----
-    NSError *readerError = nil;
-    AVAssetReader *reader = [AVAssetReader assetReaderWithAsset:asset error:&readerError];
-    if (!reader) { completion(nil, readerError); return; }
-
-    AVAssetReaderTrackOutput *videoOutput = [AVAssetReaderTrackOutput
-        assetReaderTrackOutputWithTrack:videoTrack
-        outputSettings:@{(NSString *)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)}];
-    videoOutput.alwaysCopiesSampleData = NO;
-    [reader addOutput:videoOutput];
-
-    AVAssetReaderTrackOutput *audioOutput = nil;
-    if (audioTrack) {
-        audioOutput = [AVAssetReaderTrackOutput
-            assetReaderTrackOutputWithTrack:audioTrack
-            outputSettings:@{AVFormatIDKey: @(kAudioFormatLinearPCM)}];
-        audioOutput.alwaysCopiesSampleData = NO;
-        [reader addOutput:audioOutput];
+    NSError *launchError = nil;
+    [task launchAndReturnError:&launchError];
+    if (launchError) {
+        [[NSFileManager defaultManager] removeItemAtPath:outPath error:nil];
+        if (completion) completion(nil, launchError);
     }
-
-    // ---- Setup writer ----
-    NSError *writerError = nil;
-    AVAssetWriter *writer = [AVAssetWriter assetWriterWithURL:outURL fileType:AVFileTypeMPEG4 error:&writerError];
-    if (!writer) { completion(nil, writerError); return; }
-    writer.shouldOptimizeForNetworkUse = YES; // -movflags +faststart
-
-    AVAssetWriterInput *videoInput = [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeVideo outputSettings:videoSettings];
-    videoInput.transform = videoTrack.preferredTransform;
-    videoInput.expectsMediaDataInRealTime = NO;
-    [writer addInput:videoInput];
-
-    AVAssetWriterInput *audioInput = nil;
-    if (audioTrack) {
-        audioInput = [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeAudio outputSettings:audioSettings];
-        audioInput.expectsMediaDataInRealTime = NO;
-        [writer addInput:audioInput];
-    }
-
-    [reader startReading];
-    [writer startWriting];
-    [writer startSessionAtSourceTime:kCMTimeZero];
-
-    dispatch_queue_t videoQ = dispatch_queue_create("com.findertoys.video.compress.video", DISPATCH_QUEUE_SERIAL);
-    dispatch_queue_t audioQ = dispatch_queue_create("com.findertoys.video.compress.audio", DISPATCH_QUEUE_SERIAL);
-    dispatch_group_t group = dispatch_group_create();
-
-    // Write video
-    dispatch_group_enter(group);
-    [videoInput requestMediaDataWhenReadyOnQueue:videoQ usingBlock:^{
-        while (videoInput.isReadyForMoreMediaData) {
-            CMSampleBufferRef sample = [videoOutput copyNextSampleBuffer];
-            if (sample) {
-                [videoInput appendSampleBuffer:sample];
-                CFRelease(sample);
-            } else {
-                [videoInput markAsFinished];
-                dispatch_group_leave(group);
-                return;
-            }
-        }
-    }];
-
-    // Write audio
-    if (audioInput && audioOutput) {
-        dispatch_group_enter(group);
-        [audioInput requestMediaDataWhenReadyOnQueue:audioQ usingBlock:^{
-            while (audioInput.isReadyForMoreMediaData) {
-                CMSampleBufferRef sample = [audioOutput copyNextSampleBuffer];
-                if (sample) {
-                    [audioInput appendSampleBuffer:sample];
-                    CFRelease(sample);
-                } else {
-                    [audioInput markAsFinished];
-                    dispatch_group_leave(group);
-                    return;
-                }
-            }
-        }];
-    }
-
-    dispatch_group_notify(group, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        [writer finishWritingWithCompletionHandler:^{
-            if (writer.status == AVAssetWriterStatusCompleted) {
-                completion(outURL, nil);
-            } else {
-                [[NSFileManager defaultManager] removeItemAtURL:outURL error:nil];
-                completion(nil, writer.error);
-            }
-        }];
-    });
 }
 
 - (void)compressSelectedVideos:(id)sender {
     NSArray<NSURL *> *selectedURLs = [[FIFinderSyncController defaultController] selectedItemURLs];
     if (selectedURLs.count == 0) return;
 
-    BOOL trashOriginals = FTIsPreferenceEnabled(@"TrashOriginalsAfterConversionInFinder", YES);
-    NSMutableArray<NSURL *> *videoURLs = [NSMutableArray array];
+    // Compress: original is NEVER touched — both files live side by side
     for (NSURL *url in selectedURLs) {
         if ([FTVideoExtensions() containsObject:url.pathExtension.lowercaseString]) {
-            [videoURLs addObject:url];
+            [FinderSync compressVideoAtURL:url completionHandler:nil];
         }
     }
-    if (videoURLs.count == 0) return;
-
-    dispatch_group_t group = dispatch_group_create();
-    NSMutableArray<NSURL *> *toTrash = [NSMutableArray array];
-
-    for (NSURL *sourceURL in videoURLs) {
-        dispatch_group_enter(group);
-        [FinderSync compressVideoWithAssetWriter:sourceURL completionHandler:^(NSURL *outURL, NSError *error) {
-            if (outURL && trashOriginals) {
-                @synchronized(toTrash) { [toTrash addObject:sourceURL]; }
-            }
-            dispatch_group_leave(group);
-        }];
-    }
-
-    dispatch_group_notify(group, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        for (NSURL *u in toTrash) {
-            [[NSFileManager defaultManager] trashItemAtURL:u resultingItemURL:nil error:nil];
-        }
-    });
 }
 
 - (void)convertSelectedVideosToMP4:(id)sender {
@@ -1355,24 +1436,20 @@ static inline NSString *FTLocalizedString(NSString *key) {
     if (videoURLs.count == 0) return;
 
     dispatch_group_t group = dispatch_group_create();
-    NSMutableArray<NSURL *> *createdURLs = [NSMutableArray array];
     NSMutableArray<NSURL *> *toTrash = [NSMutableArray array];
     dispatch_queue_t q = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
 
     for (NSURL *sourceURL in videoURLs) {
         dispatch_group_enter(group);
-        NSString *sourceSuffix = suffix.length > 0 ? suffix : @"_conv";
-        // For pure format conversion (no suffix), keep base name but change ext
+        // For pure format conversion, keep base name but change extension
         NSString *actualSuffix = suffix;
         if (suffix.length == 0) {
-            // Same name, different extension — skip if source already matches output ext
+            // Skip if source already matches output extension
             if ([sourceURL.pathExtension.lowercaseString isEqualToString:ext]) {
                 dispatch_group_leave(group);
                 continue;
             }
-            actualSuffix = @"";
         }
-        (void)sourceSuffix;
 
         [FinderSync exportVideoAtURL:sourceURL
                           presetName:preset
@@ -1380,12 +1457,9 @@ static inline NSString *FTLocalizedString(NSString *key) {
                     outputExtension:ext
                               suffix:actualSuffix
                    completionHandler:^(NSURL *outURL, NSError *error) {
-            if (outURL) {
-                @synchronized(createdURLs) {
-                    [createdURLs addObject:outURL];
-                    if (trashOriginals && ![sourceURL.path isEqualToString:outURL.path]) {
-                        [toTrash addObject:sourceURL];
-                    }
+            if (outURL && trashOriginals && ![sourceURL.path isEqualToString:outURL.path]) {
+                @synchronized(toTrash) {
+                    [toTrash addObject:sourceURL];
                 }
             }
             dispatch_group_leave(group);
@@ -1396,11 +1470,91 @@ static inline NSString *FTLocalizedString(NSString *key) {
         for (NSURL *u in toTrash) {
             [[NSFileManager defaultManager] trashItemAtURL:u resultingItemURL:nil error:nil];
         }
-        if (createdURLs.count > 0) {
-            // video converted silently — no Finder activation
-        (void)createdURLs;
-        }
     });
+}
+
+
+- (void)convertSelectedVideosToGIF:(id)sender {
+    NSArray<NSURL *> *selectedURLs = [[FIFinderSyncController defaultController] selectedItemURLs];
+    if (selectedURLs.count == 0) return;
+
+    NSString *ffmpeg = [FinderSync ffmpegPath];
+    if (!ffmpeg) return;
+
+    // GIF conversion: originals are never trashed (like compress — keep both)
+    for (NSURL *sourceURL in selectedURLs) {
+        NSString *ext = sourceURL.pathExtension.lowercaseString;
+        if (![FTVideoExtensions() containsObject:ext]) continue;
+
+        NSString *dir  = sourceURL.URLByDeletingLastPathComponent.path;
+        NSString *base = [sourceURL.lastPathComponent stringByDeletingPathExtension];
+        NSString *outPath = [FinderSync uniqueVideoPathInDirectory:dir
+                                                         baseName:base
+                                                        extension:@"gif"];
+        // Two-pass palette GIF for best quality via ffmpeg
+        // Pass 1: generate palette
+        NSString *palettePath = [NSTemporaryDirectory() stringByAppendingPathComponent:
+                                  [NSString stringWithFormat:@"ft_palette_%@.png", [[NSUUID UUID] UUIDString]]];
+
+        NSTask *pass1 = [[NSTask alloc] init];
+        pass1.executableURL = [NSURL fileURLWithPath:ffmpeg];
+        pass1.arguments = @[
+            @"-nostats",
+            @"-loglevel", @"error",
+            @"-y",
+            @"-i", sourceURL.path,
+            @"-an",
+            @"-vf", @"fps=12,scale=-2:'min(ih,720)':flags=lanczos,palettegen=stats_mode=diff",
+            @"-update", @"1",
+            palettePath
+        ];
+        pass1.standardOutput = [NSFileHandle fileHandleWithNullDevice];
+        pass1.standardError  = [NSFileHandle fileHandleWithNullDevice];
+
+        NSTask *pass2 = [[NSTask alloc] init];
+        pass2.executableURL = [NSURL fileURLWithPath:ffmpeg];
+        pass2.arguments = @[
+            @"-nostats",
+            @"-loglevel", @"error",
+            @"-y",
+            @"-i", sourceURL.path,
+            @"-i", palettePath,
+            @"-an",
+            @"-lavfi", @"fps=12,scale=-2:'min(ih,720)':flags=lanczos [x]; [x][1:v] paletteuse=dither=bayer:diff_mode=rectangle",
+            @"-loop", @"0",
+            outPath
+        ];
+        pass2.standardOutput = [NSFileHandle fileHandleWithNullDevice];
+        pass2.standardError  = [NSFileHandle fileHandleWithNullDevice];
+
+        NSURL *outURL = [NSURL fileURLWithPath:outPath];
+
+        pass1.terminationHandler = ^(NSTask *t1) {
+            if (t1.terminationStatus != 0) {
+                [[NSFileManager defaultManager] removeItemAtPath:palettePath error:nil];
+                return;
+            }
+            NSError *launchErr = nil;
+            [pass2 launchAndReturnError:&launchErr];
+            if (launchErr) {
+                [[NSFileManager defaultManager] removeItemAtPath:palettePath error:nil];
+            }
+        };
+
+        pass2.terminationHandler = ^(NSTask *t2) {
+            [[NSFileManager defaultManager] removeItemAtPath:palettePath error:nil];
+            // originals not trashed for GIF — always keep source
+            if (t2.terminationStatus != 0) {
+                [[NSFileManager defaultManager] removeItemAtURL:outURL error:nil];
+            }
+        };
+
+        NSError *launchErr = nil;
+        [pass1 launchAndReturnError:&launchErr];
+        if (launchErr) {
+            [[NSFileManager defaultManager] removeItemAtPath:palettePath error:nil];
+        }
+    }
 }
 
 @end
