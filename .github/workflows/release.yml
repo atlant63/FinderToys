@@ -1,0 +1,31 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-release:
+    name: Build & Release DMG
+    runs-on: macos-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build FinderToys & DMG
+        run: |
+          chmod +x build.sh
+          ./build.sh --dmg
+
+      - name: Create GitHub Release & Upload Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          name: FinderToys ${{ github.ref_name }} 🚀
+          files: dist/FinderToys.dmg
+          generate_release_notes: true
+          draft: false
+          prerelease: false

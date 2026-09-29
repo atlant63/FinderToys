@@ -16,7 +16,7 @@
 
 <br/>
 
-### ⬇️ **[Download FinderToys.dmg (942 KB)](https://github.com/atlant63/FinderToys/releases/download/v2.0.0/FinderToys.dmg)**
+### ⬇️ **[Download FinderToys.dmg](https://github.com/atlant63/FinderToys/releases/latest/download/FinderToys.dmg)**
 *(Free & Open Source for Apple Silicon M1/M2/M3/M4 & Intel)*
 
 </div>
@@ -38,7 +38,7 @@ curl -fsSL https://raw.githubusercontent.com/atlant63/FinderToys/main/install.sh
 ```
 
 ### Option 2: Drag-and-Drop DMG
-1. Download **[`FinderToys.dmg`](https://github.com/atlant63/FinderToys/releases/download/v2.0.0/FinderToys.dmg)**.
+1. Download **[`FinderToys.dmg`](https://github.com/atlant63/FinderToys/releases/latest/download/FinderToys.dmg)**.
 2. Open the disk image and drag **FinderToys** to your **Applications** folder.
 3. Launch **FinderToys** from Applications or Spotlight.
 
