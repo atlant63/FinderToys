@@ -38,7 +38,7 @@ echo "==> Compiling FinderToysExtension..."
 mkdir -p "$EXT_DIR/Contents/MacOS"
 clang -fobjc-arc \
   -framework Cocoa -framework FinderSync \
-  -framework ImageIO -framework PDFKit -framework AVFoundation \
+  -framework ImageIO -framework PDFKit -framework AVFoundation -framework Vision \
   -arch arm64 \
   -Wl,-e,_NSExtensionMain \
   "$SCRIPT_DIR/FinderToysExtension/FinderSync.m" \

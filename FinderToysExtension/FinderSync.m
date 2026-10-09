@@ -9,6 +9,7 @@
 #import <ImageIO/ImageIO.h>
 #import <PDFKit/PDFKit.h>
 #import <AVFoundation/AVFoundation.h>
+#import <Vision/Vision.h>
 
 static inline BOOL FTIsPreferenceEnabled(NSString *key, BOOL defaultVal) {
     CFPreferencesAppSynchronize(CFSTR("com.atlant63.FinderToys"));
@@ -347,11 +348,36 @@ static inline NSString *FTLocalizedString(NSString *key) {
                 imageMainItem.submenu = imageSubmenu;
                 [menu addItem:imageMainItem];
             }
-        } else if (isPDFToolsEnabled && pdfURLs.count >= 2) {
-            // Pure PDFs with no images: show Merge PDFs as standalone (no image submenu needed)
-            NSMenuItem *mergePDFItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Merge PDFs", nil) action:@selector(combineSelectedIntoPDF:) keyEquivalent:@""];
-            mergePDFItem.image = FTSymbolImage(@"doc.on.doc");
-            [menu addItem:mergePDFItem];
+        } else if (isPDFToolsEnabled && pdfURLs.count > 0 && imageURLs.count == 0 && videoURLs.count == 0 && wordURLs.count == 0) {
+            // Pure PDFs with no images:
+            // 1. If 2+ PDFs, show "Merge PDFs"
+            if (pdfURLs.count >= 2) {
+                NSMenuItem *mergePDFItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Merge PDFs", nil) action:@selector(combineSelectedIntoPDF:) keyEquivalent:@""];
+                mergePDFItem.image = FTSymbolImage(@"doc.on.doc");
+                [menu addItem:mergePDFItem];
+            }
+
+            // 2. Conversion submenu: to Word (.docx), to TXT
+            NSMenu *pdfSubmenu = [[NSMenu alloc] initWithTitle:@""];
+
+            NSMenuItem *wordItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"to Word", nil) action:@selector(convertSelectedPDFToWord:) keyEquivalent:@""];
+            NSImage *wordIcon = [NSImage imageNamed:@"word"];
+            if (wordIcon) {
+                wordIcon.template = YES;
+                wordItem.image = wordIcon;
+            } else {
+                wordItem.image = FTSymbolImage(@"doc.richtext");
+            }
+            [pdfSubmenu addItem:wordItem];
+
+            NSMenuItem *txtItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"to TXT", nil) action:@selector(convertSelectedPDFToTXT:) keyEquivalent:@""];
+            txtItem.image = FTSymbolImage(@"doc.text");
+            [pdfSubmenu addItem:txtItem];
+
+            NSMenuItem *pdfConvertMainItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Convert", nil) action:nil keyEquivalent:@""];
+            pdfConvertMainItem.image = FTSymbolImage(@"arrow.triangle.2.circlepath");
+            pdfConvertMainItem.submenu = pdfSubmenu;
+            [menu addItem:pdfConvertMainItem];
         }
 
         // B. Video submenu — compress + convert formats + GIF
@@ -1103,16 +1129,24 @@ static inline NSString *FTLocalizedString(NSString *key) {
 
 
 + (BOOL)convertWordDocumentAtURL:(NSURL *)sourceURL toURL:(NSURL *)destURL {
+    if (!sourceURL || !destURL) return NO;
+    BOOL isDir = NO;
+    if (![[NSFileManager defaultManager] fileExistsAtPath:sourceURL.path isDirectory:&isDir] || isDir) {
+        return NO;
+    }
+
     NSError *err = nil;
     NSDictionary *docAttrs = nil;
     NSAttributedString *attrStr = [[NSAttributedString alloc] initWithURL:sourceURL
                                                                   options:@{}
                                                        documentAttributes:&docAttrs
                                                                     error:&err];
-    if (!attrStr) {
+    if (!attrStr || attrStr.length == 0) {
         NSDictionary *options = @{ NSDocumentTypeDocumentAttribute: NSPlainTextDocumentType };
         attrStr = [[NSAttributedString alloc] initWithURL:sourceURL options:options documentAttributes:nil error:nil];
-        if (!attrStr) return NO;
+    }
+    if (!attrStr) {
+        attrStr = [[NSAttributedString alloc] initWithString:@" "];
     }
 
     CGFloat pageWidth = 595.0; // Standard A4 (210 x 297 mm in points)
@@ -1120,76 +1154,282 @@ static inline NSString *FTLocalizedString(NSString *key) {
     CGFloat marginX = 40.0;
     CGFloat marginY = 50.0;
     CGSize contentSize = CGSizeMake(pageWidth - 2 * marginX, pageHeight - 2 * marginY);
+    CGRect pageRect = CGRectMake(0, 0, pageWidth, pageHeight);
 
     NSTextStorage *storage = [[NSTextStorage alloc] initWithAttributedString:attrStr];
     NSLayoutManager *layout = [[NSLayoutManager alloc] init];
     [storage addLayoutManager:layout];
 
-    PDFDocument *pdfDoc = [[PDFDocument alloc] init];
-    NSUInteger pageIndex = 0;
-    NSUInteger glyphIndex = 0;
+    CGContextRef pdfContext = CGPDFContextCreateWithURL((__bridge CFURLRef)destURL, &pageRect, NULL);
+    if (!pdfContext) return NO;
 
-    while (glyphIndex < layout.numberOfGlyphs) {
+    NSUInteger glyphIndex = 0;
+    NSUInteger totalGlyphs = layout.numberOfGlyphs;
+
+    if (totalGlyphs == 0) {
+        CGPDFContextBeginPage(pdfContext, NULL);
+        CGPDFContextEndPage(pdfContext);
+        CGPDFContextClose(pdfContext);
+        CGContextRelease(pdfContext);
+        return YES;
+    }
+
+    NSUInteger pageCount = 0;
+    while (glyphIndex < totalGlyphs && pageCount < 1000) {
         @autoreleasepool {
             NSTextContainer *container = [[NSTextContainer alloc] initWithContainerSize:contentSize];
             container.widthTracksTextView = NO;
             container.heightTracksTextView = NO;
+            container.lineFragmentPadding = 0.0;
             [layout addTextContainer:container];
 
-            NSTextView *textView = [[NSTextView alloc] initWithFrame:NSMakeRect(0, 0, contentSize.width, contentSize.height) textContainer:container];
-            textView.drawsBackground = NO;
-
-            NSView *pageView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, pageWidth, pageHeight)];
-            [pageView addSubview:textView];
-            [textView setFrameOrigin:NSMakePoint(marginX, marginY)];
-
-            NSData *pagePDFData = [pageView dataWithPDFInsideRect:NSMakeRect(0, 0, pageWidth, pageHeight)];
-            if (pagePDFData) {
-                PDFDocument *singlePageDoc = [[PDFDocument alloc] initWithData:pagePDFData];
-                if (singlePageDoc && singlePageDoc.pageCount > 0) {
-                    PDFPage *p = [singlePageDoc pageAtIndex:0];
-                    if (p) {
-                        [pdfDoc insertPage:p atIndex:pageIndex++];
-                    }
-                }
-            }
-
             NSRange glyphRange = [layout glyphRangeForTextContainer:container];
-            if (glyphRange.length == 0) break;
-            glyphIndex += glyphRange.length;
+            if (glyphRange.length == 0 || NSMaxRange(glyphRange) <= glyphIndex) break;
+
+            CGPDFContextBeginPage(pdfContext, NULL);
+
+            CGContextSaveGState(pdfContext);
+            CGContextTranslateCTM(pdfContext, 0, pageHeight);
+            CGContextScaleCTM(pdfContext, 1.0, -1.0);
+
+            NSGraphicsContext *gc = [NSGraphicsContext graphicsContextWithCGContext:pdfContext flipped:YES];
+            [NSGraphicsContext setCurrentContext:gc];
+
+            [layout drawBackgroundForGlyphRange:glyphRange atPoint:NSMakePoint(marginX, marginY)];
+            [layout drawGlyphsForGlyphRange:glyphRange atPoint:NSMakePoint(marginX, marginY)];
+
+            CGContextRestoreGState(pdfContext);
+            CGPDFContextEndPage(pdfContext);
+
+            glyphIndex = NSMaxRange(glyphRange);
+            pageCount++;
         }
     }
 
-    if (pdfDoc.pageCount == 0) {
-        NSView *emptyView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, pageWidth, pageHeight)];
-        NSData *emptyData = [emptyView dataWithPDFInsideRect:NSMakeRect(0, 0, pageWidth, pageHeight)];
-        if (emptyData) {
-            PDFDocument *emptyDoc = [[PDFDocument alloc] initWithData:emptyData];
-            if (emptyDoc.pageCount > 0) {
-                [pdfDoc insertPage:[emptyDoc pageAtIndex:0] atIndex:0];
-            }
-        }
-    }
-
-    return [pdfDoc writeToURL:destURL];
+    [NSGraphicsContext setCurrentContext:nil];
+    CGPDFContextClose(pdfContext);
+    CGContextRelease(pdfContext);
+    return YES;
 }
 
 + (BOOL)convertWordDocumentAtURL:(NSURL *)sourceURL toPlainTextURL:(NSURL *)destURL {
+    if (!sourceURL || !destURL) return NO;
+    BOOL isDir = NO;
+    if (![[NSFileManager defaultManager] fileExistsAtPath:sourceURL.path isDirectory:&isDir] || isDir) return NO;
+
     NSError *err = nil;
     NSAttributedString *attrStr = [[NSAttributedString alloc] initWithURL:sourceURL options:@{} documentAttributes:nil error:&err];
+    if (!attrStr || attrStr.length == 0) {
+        attrStr = [[NSAttributedString alloc] initWithURL:sourceURL options:@{NSDocumentTypeDocumentAttribute: NSPlainTextDocumentType} documentAttributes:nil error:nil];
+    }
     if (!attrStr || attrStr.length == 0) return NO;
     return [attrStr.string writeToURL:destURL atomically:YES encoding:NSUTF8StringEncoding error:nil];
 }
 
 + (BOOL)convertWordDocumentAtURL:(NSURL *)sourceURL toDocxURL:(NSURL *)destURL {
+    if (!sourceURL || !destURL) return NO;
+    BOOL isDir = NO;
+    if (![[NSFileManager defaultManager] fileExistsAtPath:sourceURL.path isDirectory:&isDir] || isDir) return NO;
+
     NSError *err = nil;
     NSAttributedString *attrStr = [[NSAttributedString alloc] initWithURL:sourceURL options:@{} documentAttributes:nil error:&err];
+    if (!attrStr || attrStr.length == 0) {
+        attrStr = [[NSAttributedString alloc] initWithURL:sourceURL options:@{NSDocumentTypeDocumentAttribute: NSPlainTextDocumentType} documentAttributes:nil error:nil];
+    }
     if (!attrStr || attrStr.length == 0) return NO;
     NSData *docxData = [attrStr dataFromRange:NSMakeRange(0, attrStr.length)
                             documentAttributes:@{NSDocumentTypeDocumentAttribute: NSOfficeOpenXMLTextDocumentType}
                                          error:&err];
     if (!docxData) return NO;
     return [docxData writeToURL:destURL atomically:YES];
+}
+
++ (CGImageRef)createCGImageFromPDFPage:(PDFPage *)page {
+    if (!page) return NULL;
+    NSRect bounds = [page boundsForBox:kPDFDisplayBoxMediaBox];
+    if (bounds.size.width <= 0 || bounds.size.height <= 0) return NULL;
+
+    size_t width = (size_t)bounds.size.width;
+    size_t height = (size_t)bounds.size.height;
+
+    if (width > 4096 || height > 4096) {
+        CGFloat scale = MIN(4096.0 / width, 4096.0 / height);
+        width = MAX(1, (size_t)(width * scale));
+        height = MAX(1, (size_t)(height * scale));
+    }
+
+    CGColorSpaceRef cs = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    if (!cs) return NULL;
+    CGContextRef ctx = CGBitmapContextCreate(NULL, width, height, 8, width * 4, cs, kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+    CGColorSpaceRelease(cs);
+    if (!ctx) return NULL;
+
+    CGContextSetRGBFillColor(ctx, 1.0, 1.0, 1.0, 1.0);
+    CGContextFillRect(ctx, CGRectMake(0, 0, width, height));
+
+    [page drawWithBox:kPDFDisplayBoxMediaBox toContext:ctx];
+    CGImageRef image = CGBitmapContextCreateImage(ctx);
+    CGContextRelease(ctx);
+    return image;
+}
+
++ (NSString *)ocrTextFromPDFPage:(PDFPage *)page {
+    if (!page) return @"";
+    CGImageRef cgImage = [self createCGImageFromPDFPage:page];
+    if (!cgImage) return @"";
+
+    __block NSMutableString *recognized = [NSMutableString string];
+    @autoreleasepool {
+        VNRecognizeTextRequest *request = [[VNRecognizeTextRequest alloc] initWithCompletionHandler:^(VNRequest *req, NSError *err) {
+            if (err) return;
+            for (VNRecognizedTextObservation *obs in req.results) {
+                VNRecognizedText *topCandidate = [[obs topCandidates:1] firstObject];
+                if (topCandidate.string.length > 0) {
+                    [recognized appendString:topCandidate.string];
+                    [recognized appendString:@"\n"];
+                }
+            }
+        }];
+        request.recognitionLevel = VNRequestTextRecognitionLevelAccurate;
+        request.usesLanguageCorrection = YES;
+
+        VNImageRequestHandler *handler = [[VNImageRequestHandler alloc] initWithCGImage:cgImage options:@{}];
+        [handler performRequests:@[request] error:nil];
+    }
+    CGImageRelease(cgImage);
+    return recognized;
+}
+
++ (BOOL)convertPDFDocumentAtURL:(NSURL *)sourceURL toDocxURL:(NSURL *)destURL {
+    if (!sourceURL || !destURL) return NO;
+    BOOL isDir = NO;
+    if (![[NSFileManager defaultManager] fileExistsAtPath:sourceURL.path isDirectory:&isDir] || isDir) {
+        return NO;
+    }
+
+    PDFDocument *pdfDoc = [[PDFDocument alloc] initWithURL:sourceURL];
+    if (!pdfDoc || pdfDoc.pageCount == 0 || pdfDoc.isLocked) return NO;
+
+    NSMutableAttributedString *fullDoc = [[NSMutableAttributedString alloc] init];
+    BOOL foundAnyText = NO;
+
+    for (NSUInteger i = 0; i < pdfDoc.pageCount; i++) {
+        @autoreleasepool {
+            PDFPage *page = [pdfDoc pageAtIndex:i];
+            if (!page) continue;
+
+            NSAttributedString *pageStr = [page attributedString];
+            if (!pageStr || pageStr.length == 0) {
+                NSString *plain = [page string];
+                if (plain.length > 0) {
+                    pageStr = [[NSAttributedString alloc] initWithString:plain];
+                }
+            }
+
+            if (pageStr && pageStr.length > 0) {
+                foundAnyText = YES;
+                if (fullDoc.length > 0) {
+                    [fullDoc appendAttributedString:[[NSAttributedString alloc] initWithString:@"\n\n"]];
+                }
+                [fullDoc appendAttributedString:pageStr];
+            }
+        }
+    }
+
+    // Fallback: OCR for scanned PDF with no text layer (capped at first 100 pages for performance)
+    if (!foundAnyText) {
+        NSUInteger maxOCRCount = MIN(pdfDoc.pageCount, (NSUInteger)100);
+        for (NSUInteger i = 0; i < maxOCRCount; i++) {
+            @autoreleasepool {
+                PDFPage *page = [pdfDoc pageAtIndex:i];
+                if (!page) continue;
+                NSString *ocrText = [self ocrTextFromPDFPage:page];
+                if (ocrText.length > 0) {
+                    if (fullDoc.length > 0) {
+                        [fullDoc appendAttributedString:[[NSAttributedString alloc] initWithString:@"\n\n"]];
+                    }
+                    [fullDoc appendAttributedString:[[NSAttributedString alloc] initWithString:ocrText]];
+                }
+            }
+        }
+    }
+
+    // Fallback: embed rendered page images if completely empty (capped at first 50 pages)
+    if (fullDoc.length == 0) {
+        NSUInteger maxImgCount = MIN(pdfDoc.pageCount, (NSUInteger)50);
+        for (NSUInteger i = 0; i < maxImgCount; i++) {
+            @autoreleasepool {
+                PDFPage *page = [pdfDoc pageAtIndex:i];
+                if (!page) continue;
+                CGImageRef cgImage = [self createCGImageFromPDFPage:page];
+                if (cgImage) {
+                    NSImage *img = [[NSImage alloc] initWithCGImage:cgImage size:[page boundsForBox:kPDFDisplayBoxMediaBox].size];
+                    CGImageRelease(cgImage);
+                    NSTextAttachmentCell *cell = [[NSTextAttachmentCell alloc] initImageCell:img];
+                    NSTextAttachment *attachment = [[NSTextAttachment alloc] init];
+                    attachment.attachmentCell = cell;
+                    if (fullDoc.length > 0) {
+                        [fullDoc appendAttributedString:[[NSAttributedString alloc] initWithString:@"\n\n"]];
+                    }
+                    [fullDoc appendAttributedString:[NSAttributedString attributedStringWithAttachment:attachment]];
+                }
+            }
+        }
+    }
+
+    if (fullDoc.length == 0) {
+        fullDoc = [[NSMutableAttributedString alloc] initWithString:@" "];
+    }
+
+    NSError *err = nil;
+    NSData *docxData = [fullDoc dataFromRange:NSMakeRange(0, fullDoc.length)
+                           documentAttributes:@{NSDocumentTypeDocumentAttribute: NSOfficeOpenXMLTextDocumentType}
+                                        error:&err];
+    if (!docxData) return NO;
+    return [docxData writeToURL:destURL atomically:YES];
+}
+
++ (BOOL)convertPDFDocumentAtURL:(NSURL *)sourceURL toPlainTextURL:(NSURL *)destURL {
+    if (!sourceURL || !destURL) return NO;
+    BOOL isDir = NO;
+    if (![[NSFileManager defaultManager] fileExistsAtPath:sourceURL.path isDirectory:&isDir] || isDir) {
+        return NO;
+    }
+
+    PDFDocument *pdfDoc = [[PDFDocument alloc] initWithURL:sourceURL];
+    if (!pdfDoc || pdfDoc.pageCount == 0 || pdfDoc.isLocked) return NO;
+
+    NSMutableString *fullText = [NSMutableString string];
+
+    for (NSUInteger i = 0; i < pdfDoc.pageCount; i++) {
+        @autoreleasepool {
+            PDFPage *page = [pdfDoc pageAtIndex:i];
+            if (!page) continue;
+            NSString *plain = [page string];
+            if (plain.length > 0) {
+                if (fullText.length > 0) [fullText appendString:@"\n\n"];
+                [fullText appendString:plain];
+            }
+        }
+    }
+
+    if (fullText.length == 0) {
+        NSUInteger maxOCRCount = MIN(pdfDoc.pageCount, (NSUInteger)100);
+        for (NSUInteger i = 0; i < maxOCRCount; i++) {
+            @autoreleasepool {
+                PDFPage *page = [pdfDoc pageAtIndex:i];
+                if (!page) continue;
+                NSString *ocrText = [self ocrTextFromPDFPage:page];
+                if (ocrText.length > 0) {
+                    if (fullText.length > 0) [fullText appendString:@"\n\n"];
+                    [fullText appendString:ocrText];
+                }
+            }
+        }
+    }
+
+    if (fullText.length == 0) return NO;
+    return [fullText writeToURL:destURL atomically:YES encoding:NSUTF8StringEncoding error:nil];
 }
 
 - (void)convertSelectedWordToPDF:(id)sender {
@@ -1203,6 +1443,7 @@ static inline NSString *FTLocalizedString(NSString *key) {
                 if (![FTWordExtensions() containsObject:ext]) continue;
 
                 NSString *dir = sourceURL.URLByDeletingLastPathComponent.path;
+                if (!dir || dir.length == 0) continue;
                 NSString *baseName = [sourceURL.lastPathComponent stringByDeletingPathExtension];
                 NSString *destPath = [FinderSync uniqueVideoPathInDirectory:dir baseName:baseName extension:@"pdf"];
                 NSURL *destURL = [NSURL fileURLWithPath:destPath];
@@ -1224,6 +1465,7 @@ static inline NSString *FTLocalizedString(NSString *key) {
                 if (![FTWordExtensions() containsObject:ext]) continue;
 
                 NSString *dir = sourceURL.URLByDeletingLastPathComponent.path;
+                if (!dir || dir.length == 0) continue;
                 NSString *baseName = [sourceURL.lastPathComponent stringByDeletingPathExtension];
                 NSString *destPath = [FinderSync uniqueVideoPathInDirectory:dir baseName:baseName extension:@"txt"];
                 NSURL *destURL = [NSURL fileURLWithPath:destPath];
@@ -1246,11 +1488,56 @@ static inline NSString *FTLocalizedString(NSString *key) {
                 if ([ext isEqualToString:@"docx"]) continue;
 
                 NSString *dir = sourceURL.URLByDeletingLastPathComponent.path;
+                if (!dir || dir.length == 0) continue;
                 NSString *baseName = [sourceURL.lastPathComponent stringByDeletingPathExtension];
                 NSString *destPath = [FinderSync uniqueVideoPathInDirectory:dir baseName:baseName extension:@"docx"];
                 NSURL *destURL = [NSURL fileURLWithPath:destPath];
 
                 [FinderSync convertWordDocumentAtURL:sourceURL toDocxURL:destURL];
+            }
+        }
+    });
+}
+
+- (void)convertSelectedPDFToWord:(id)sender {
+    NSArray<NSURL *> *selectedURLs = [[FIFinderSyncController defaultController] selectedItemURLs];
+    if (selectedURLs.count == 0) return;
+
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        for (NSURL *sourceURL in selectedURLs) {
+            @autoreleasepool {
+                NSString *ext = sourceURL.pathExtension.lowercaseString;
+                if (![ext isEqualToString:@"pdf"]) continue;
+
+                NSString *dir = sourceURL.URLByDeletingLastPathComponent.path;
+                if (!dir || dir.length == 0) continue;
+                NSString *baseName = [sourceURL.lastPathComponent stringByDeletingPathExtension];
+                NSString *destPath = [FinderSync uniqueVideoPathInDirectory:dir baseName:baseName extension:@"docx"];
+                NSURL *destURL = [NSURL fileURLWithPath:destPath];
+
+                [FinderSync convertPDFDocumentAtURL:sourceURL toDocxURL:destURL];
+            }
+        }
+    });
+}
+
+- (void)convertSelectedPDFToTXT:(id)sender {
+    NSArray<NSURL *> *selectedURLs = [[FIFinderSyncController defaultController] selectedItemURLs];
+    if (selectedURLs.count == 0) return;
+
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        for (NSURL *sourceURL in selectedURLs) {
+            @autoreleasepool {
+                NSString *ext = sourceURL.pathExtension.lowercaseString;
+                if (![ext isEqualToString:@"pdf"]) continue;
+
+                NSString *dir = sourceURL.URLByDeletingLastPathComponent.path;
+                if (!dir || dir.length == 0) continue;
+                NSString *baseName = [sourceURL.lastPathComponent stringByDeletingPathExtension];
+                NSString *destPath = [FinderSync uniqueVideoPathInDirectory:dir baseName:baseName extension:@"txt"];
+                NSURL *destURL = [NSURL fileURLWithPath:destPath];
+
+                [FinderSync convertPDFDocumentAtURL:sourceURL toPlainTextURL:destURL];
             }
         }
     });
@@ -1263,7 +1550,7 @@ static inline NSString *FTLocalizedString(NSString *key) {
     NSString *path = [dir stringByAppendingPathComponent:[NSString stringWithFormat:@"%@.%@", base, ext]];
     NSFileManager *fm = [NSFileManager defaultManager];
     int counter = 1;
-    while ([fm fileExistsAtPath:path]) {
+    while ([fm fileExistsAtPath:path] && counter <= 1000) {
         path = [dir stringByAppendingPathComponent:[NSString stringWithFormat:@"%@ (%d).%@", base, counter, ext]];
         counter++;
     }

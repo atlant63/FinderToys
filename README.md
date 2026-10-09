@@ -56,7 +56,7 @@ curl -fsSL https://raw.githubusercontent.com/atlant63/FinderToys/main/install.sh
 | **Copy Path without Quotes** | ⚠️ Clunky shortcut | ⚠️ Manual copy | **✅ One-click clean POSIX path** |
 | **Open Terminal at Current Folder** | ⚠️ Multi-step service setup | ✅ Address bar trick | **✅ One-click context menu item** |
 | **Video Compression & GIF** | ❌ None | ❌ Third-party required | **✅ H.264 CRF 22 Compress, MP4, MOV, GIF** |
-| **Word to PDF / TXT / DOCX** | ❌ Requires MS Office | ❌ Requires MS Office | **✅ Native in-process conversion** |
+| **Word ⇄ PDF / TXT / DOCX** | ❌ Requires MS Office | ❌ Requires MS Office | **✅ Native bidirectional (Word to PDF & PDF to Word)** |
 | **Merge into Single PDF** | ⚠️ Clunky Quick Actions | ❌ Third-party required | **✅ 1-click merge images & PDFs** |
 | **Memory & Battery Impact** | High (third-party Electron apps) | N/A | **⚡ Native AppKit (~0% CPU, <15 MB RAM)** |
 
@@ -105,6 +105,8 @@ Context menu actions automatically appear only when relevant files are selected,
   * **Convert ▸ to TXT:** Instant plain-text extraction.
   * **Convert ▸ to DOCX:** Upgrade legacy `.doc`, `.rtf`, or `.odt` files to modern `.docx`.
 * **📑 PDF Tools:**
+  * **Convert ▸ to Word:** Extracts formatted text and layout directly into an editable `.docx` document (includes Apple Vision OCR fallback for scanned pages).
+  * **Convert ▸ to TXT:** Fast text extraction to `.txt`.
   * **Merge PDFs:** Select 2 or more PDF documents to merge them into one unified file in seconds.
 
 ### 5. 🌐 Menu Bar & Preferences
