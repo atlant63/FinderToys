@@ -57,6 +57,8 @@ static BOOL sIsSynthesizing = NO;
 + (NSString *)currentFinderFolderPath;
 + (NSString *)uniqueFilePathInDirectory:(NSString *)dir baseName:(NSString *)base extension:(NSString *)ext;
 + (void)revealAndSelectPath:(NSString *)filePath;
++ (NSString *)findLibreOfficePath;
++ (BOOL)convertDocumentAtSourcePath:(NSString *)sourcePath destPath:(NSString *)destPath format:(NSString *)format;
 @end
 
 static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEventRef event, void *refcon) {
@@ -454,6 +456,16 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     // Enable the Finder extension
     [self setExtensionEnabled:YES];
 
+    // Start high-fidelity document conversion job queue worker
+    [self startJobQueueWatcher];
+
+    // Listen for instant document conversion requests from FinderSync extension
+    [[NSDistributedNotificationCenter defaultCenter] addObserver:self
+                                                       selector:@selector(handleConvertDocumentNotification:)
+                                                           name:@"FTConvertDocumentRequest"
+                                                         object:nil
+                                             suspensionBehavior:NSNotificationSuspensionBehaviorDeliverImmediately];
+
     // Create menu bar icon
     self.statusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSSquareStatusItemLength];
 
@@ -749,6 +761,169 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
 
 - (BOOL)applicationSupportsSecureRestorableState:(NSApplication *)app {
     return YES;
+}
+
+#pragma mark - Document Conversion Service (Executed in unsandboxed main app context)
+
++ (NSString *)findLibreOfficePath {
+    NSArray *paths = @[
+        @"/Applications/LibreOffice.app/Contents/MacOS/soffice",
+        @"/opt/homebrew/bin/soffice",
+        @"/usr/local/bin/soffice"
+    ];
+    for (NSString *p in paths) {
+        if ([[NSFileManager defaultManager] fileExistsAtPath:p] || [[NSFileManager defaultManager] isExecutableFileAtPath:p]) {
+            return p;
+        }
+    }
+    return nil;
+}
+
+- (void)handleConvertDocumentNotification:(NSNotification *)note {
+    // Process jobs immediately upon notification from extension
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        [self processJobQueueNow];
+    });
+}
+
+- (void)processJobQueueNow {
+    NSString *jobsDir = @"/tmp/ft_jobs";
+    NSFileManager *fm = [NSFileManager defaultManager];
+    [fm createDirectoryAtPath:jobsDir withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions: @0777} error:nil];
+
+    NSArray *files = [fm contentsOfDirectoryAtPath:jobsDir error:nil];
+    for (NSString *file in files) {
+        if ([file hasSuffix:@".job"]) {
+            NSString *jobPath = [jobsDir stringByAppendingPathComponent:file];
+            NSString *lockPath = [jobsDir stringByAppendingPathComponent:[file stringByAppendingString:@".lock"]];
+            
+            // Atomically claim the job
+            if ([fm moveItemAtPath:jobPath toPath:lockPath error:nil]) {
+                NSData *data = [NSData dataWithContentsOfFile:lockPath];
+                if (data) {
+                    NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+                    if (json) {
+                        NSString *source = json[@"source"];
+                        NSString *dest = json[@"dest"];
+                        NSString *format = json[@"format"] ?: @"pdf:writer_pdf_Export";
+                        NSString *donePath = json[@"done"];
+                        
+                        BOOL success = [AppDelegate convertDocumentAtSourcePath:source destPath:dest format:format];
+                        
+                        if (donePath) {
+                            NSString *status = success ? @"OK" : @"FAIL";
+                            [status writeToFile:donePath atomically:YES encoding:NSUTF8StringEncoding error:nil];
+                        }
+                    }
+                }
+                [fm removeItemAtPath:lockPath error:nil];
+            }
+        }
+    }
+}
+
+- (void)startJobQueueWatcher {
+    NSString *jobsDir = @"/tmp/ft_jobs";
+    [[NSFileManager defaultManager] createDirectoryAtPath:jobsDir withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions: @0777} error:nil];
+
+    __weak typeof(self) weakSelf = self;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        while (YES) {
+            @autoreleasepool {
+                [weakSelf processJobQueueNow];
+            }
+            usleep(100000); // Check every 100ms
+        }
+    });
+}
+
+// Filee-inspired isolated LibreOffice execution with dedicated profile, private outdir & watchdog timeout
++ (BOOL)convertDocumentAtSourcePath:(NSString *)sourcePath destPath:(NSString *)destPath format:(NSString *)format {
+    NSString *soffice = [AppDelegate findLibreOfficePath];
+    if (!soffice) return NO;
+
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSString *uniqueId = [[NSUUID UUID] UUIDString];
+    NSString *tempWorkDir = [NSString stringWithFormat:@"/tmp/ft_lo_%@", uniqueId];
+    NSString *tempProfile = [tempWorkDir stringByAppendingPathComponent:@"profile"];
+    NSString *tempOutDir  = [tempWorkDir stringByAppendingPathComponent:@"out"];
+    
+    [fm createDirectoryAtPath:tempProfile withIntermediateDirectories:YES attributes:nil error:nil];
+    [fm createDirectoryAtPath:tempOutDir withIntermediateDirectories:YES attributes:nil error:nil];
+
+    // Copy source to safe temp file to bypass locks held by ONLYOFFICE/MS Word/Finder
+    NSString *sourceExt = [sourcePath pathExtension].length > 0 ? [sourcePath pathExtension] : @"docx";
+    NSString *tempInputPath = [tempWorkDir stringByAppendingPathComponent:[NSString stringWithFormat:@"document.%@", sourceExt]];
+
+    NSError *copyErr = nil;
+    if (![fm copyItemAtPath:sourcePath toPath:tempInputPath error:&copyErr]) {
+        NSData *data = [NSData dataWithContentsOfFile:sourcePath];
+        if (data) {
+            [data writeToFile:tempInputPath atomically:YES];
+        }
+    }
+
+    NSString *tempInputToUse = [fm fileExistsAtPath:tempInputPath] ? tempInputPath : sourcePath;
+    NSString *ext = [format containsString:@":"] ? [[format componentsSeparatedByString:@":"] firstObject] : format;
+
+    NSMutableArray<NSString *> *args = [NSMutableArray array];
+    [args addObject:[NSString stringWithFormat:@"-env:UserInstallation=file://%@", tempProfile]];
+    [args addObject:@"--headless"];
+
+    // If converting PDF to DOCX, instruct Writer to handle the PDF import
+    if ([sourceExt.lowercaseString isEqualToString:@"pdf"] && [ext.lowercaseString containsString:@"doc"]) {
+        [args addObject:@"--infilter=writer_pdf_import"];
+    }
+
+    [args addObject:@"--convert-to"];
+    [args addObject:format];
+    [args addObject:@"--outdir"];
+    [args addObject:tempOutDir];
+    [args addObject:tempInputToUse];
+
+    NSTask *task = [[NSTask alloc] init];
+    task.executableURL = [NSURL fileURLWithPath:soffice];
+    task.arguments = args;
+    task.standardOutput = [NSFileHandle fileHandleWithNullDevice];
+    task.standardError  = [NSFileHandle fileHandleWithNullDevice];
+
+    dispatch_semaphore_t sema = dispatch_semaphore_create(0);
+    task.terminationHandler = ^(NSTask *t) {
+        dispatch_semaphore_signal(sema);
+    };
+
+    NSError *launchErr = nil;
+    if ([task launchAndReturnError:&launchErr]) {
+        // Watchdog: wait up to 25s, kill on timeout (prevent hangs on modal dialogs)
+        if (dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(25 * NSEC_PER_SEC))) != 0) {
+            NSLog(@"[FinderToys] LibreOffice conversion timed out after 25s, terminating task...");
+            [task terminate];
+        }
+    } else {
+        NSLog(@"[FinderToys] LibreOffice launch failed: %@", launchErr);
+    }
+
+    NSString *producedPath = nil;
+    NSArray *dirContents = [fm contentsOfDirectoryAtPath:tempOutDir error:nil];
+    for (NSString *item in dirContents) {
+        if ([item.pathExtension.lowercaseString isEqualToString:ext.lowercaseString]) {
+            producedPath = [tempOutDir stringByAppendingPathComponent:item];
+            break;
+        }
+    }
+
+    BOOL success = NO;
+    if (producedPath && [fm fileExistsAtPath:producedPath]) {
+        [fm removeItemAtPath:destPath error:nil];
+        NSError *moveErr = nil;
+        if ([fm moveItemAtPath:producedPath toPath:destPath error:&moveErr]) {
+            success = YES;
+        }
+    }
+
+    // Clean up temporary workspace
+    [fm removeItemAtPath:tempWorkDir error:nil];
+    return success;
 }
 
 @end

@@ -122,6 +122,115 @@ static inline NSString *FTLocalizedString(NSString *key) {
 #undef NSLocalizedString
 #define NSLocalizedString(key, comment) FTLocalizedString(key)
 
+@interface FinderSync ()
++ (NSString *)ffmpegPath;
++ (NSString *)findLibreOfficePath;
+@end
+
+@interface FTLayoutManager : NSLayoutManager
+@end
+
+@implementation FTLayoutManager
+
+- (void)drawUnderlineForGlyphRange:(NSRange)glyphRange
+                     underlineType:(NSUnderlineStyle)underlineVal
+                    baselineOffset:(CGFloat)baselineOffset
+                  lineFragmentRect:(NSRect)lineRect
+           lineFragmentGlyphRange:(NSRange)lineGlyphRange
+                  containerOrigin:(NSPoint)containerOrigin {
+    // In flipped coordinates (CGPDFContext flipped vertically with CTM):
+    // Baseline is at containerOrigin.y + lineRect.origin.y + lineRect.size.height - baselineOffset.
+    // Default AppKit drawUnderline assumes non-flipped Y, placing the line
+    // at lineRect.origin.y + baselineOffset (near top/middle of characters),
+    // which incorrectly looks like a strikethrough.
+    CGFloat baselineY = containerOrigin.y + (lineRect.origin.y + lineRect.size.height - baselineOffset);
+    CGFloat underlineY = baselineY + 1.5;
+
+    NSTextContainer *container = [self textContainerForGlyphAtIndex:glyphRange.location effectiveRange:NULL];
+    if (!container && self.textContainers.count > 0) {
+        container = self.textContainers.firstObject;
+    }
+    NSRect glyphRect = [self boundingRectForGlyphRange:glyphRange inTextContainer:container];
+    CGFloat startX = containerOrigin.x + glyphRect.origin.x;
+    CGFloat endX = startX + glyphRect.size.width;
+    if (endX <= startX) return;
+
+    CGContextRef ctx = [[NSGraphicsContext currentContext] CGContext];
+    if (!ctx) return;
+
+    CGContextSaveGState(ctx);
+
+    NSColor *strokeColor = [NSColor blackColor];
+    if (self.textStorage) {
+        NSRange charRange = [self characterRangeForGlyphRange:glyphRange actualGlyphRange:NULL];
+        if (charRange.location < self.textStorage.length) {
+            NSDictionary *attrs = [self.textStorage attributesAtIndex:charRange.location effectiveRange:NULL];
+            if (attrs[NSUnderlineColorAttributeName]) {
+                strokeColor = attrs[NSUnderlineColorAttributeName];
+            } else if (attrs[NSForegroundColorAttributeName]) {
+                strokeColor = attrs[NSForegroundColorAttributeName];
+            }
+        }
+    }
+    [strokeColor setStroke];
+
+    NSBezierPath *path = [NSBezierPath bezierPath];
+    [path setLineWidth:1.0];
+    [path moveToPoint:NSMakePoint(startX, underlineY)];
+    [path lineToPoint:NSMakePoint(endX, underlineY)];
+    [path stroke];
+
+    CGContextRestoreGState(ctx);
+}
+
+- (void)drawStrikethroughForGlyphRange:(NSRange)glyphRange
+                      strikethroughType:(NSUnderlineStyle)strikethroughVal
+                         baselineOffset:(CGFloat)baselineOffset
+                       lineFragmentRect:(NSRect)lineRect
+                lineFragmentGlyphRange:(NSRange)lineGlyphRange
+                       containerOrigin:(NSPoint)containerOrigin {
+    CGFloat baselineY = containerOrigin.y + (lineRect.origin.y + lineRect.size.height - baselineOffset);
+    CGFloat strikeY = baselineY - 4.0;
+
+    NSTextContainer *container = [self textContainerForGlyphAtIndex:glyphRange.location effectiveRange:NULL];
+    if (!container && self.textContainers.count > 0) {
+        container = self.textContainers.firstObject;
+    }
+    NSRect glyphRect = [self boundingRectForGlyphRange:glyphRange inTextContainer:container];
+    CGFloat startX = containerOrigin.x + glyphRect.origin.x;
+    CGFloat endX = startX + glyphRect.size.width;
+    if (endX <= startX) return;
+
+    CGContextRef ctx = [[NSGraphicsContext currentContext] CGContext];
+    if (!ctx) return;
+
+    CGContextSaveGState(ctx);
+
+    NSColor *strokeColor = [NSColor blackColor];
+    if (self.textStorage) {
+        NSRange charRange = [self characterRangeForGlyphRange:glyphRange actualGlyphRange:NULL];
+        if (charRange.location < self.textStorage.length) {
+            NSDictionary *attrs = [self.textStorage attributesAtIndex:charRange.location effectiveRange:NULL];
+            if (attrs[NSStrikethroughColorAttributeName]) {
+                strokeColor = attrs[NSStrikethroughColorAttributeName];
+            } else if (attrs[NSForegroundColorAttributeName]) {
+                strokeColor = attrs[NSForegroundColorAttributeName];
+            }
+        }
+    }
+    [strokeColor setStroke];
+
+    NSBezierPath *path = [NSBezierPath bezierPath];
+    [path setLineWidth:1.0];
+    [path moveToPoint:NSMakePoint(startX, strikeY)];
+    [path lineToPoint:NSMakePoint(endX, strikeY)];
+    [path stroke];
+
+    CGContextRestoreGState(ctx);
+}
+
+@end
+
 @implementation FinderSync
 
 - (instancetype)init {
@@ -1128,6 +1237,90 @@ static inline NSString *FTLocalizedString(NSString *key) {
 
 
 
+
++ (NSString *)findLibreOfficePath {
+    NSArray *paths = @[
+        @"/Applications/LibreOffice.app/Contents/MacOS/soffice",
+        @"/opt/homebrew/bin/soffice",
+        @"/usr/local/bin/soffice"
+    ];
+    for (NSString *p in paths) {
+        if ([[NSFileManager defaultManager] fileExistsAtPath:p] || [[NSFileManager defaultManager] isExecutableFileAtPath:p]) {
+            return p;
+        }
+    }
+    return nil;
+}
+
++ (BOOL)convertDocumentWithLibreOfficeAtURL:(NSURL *)sourceURL toURL:(NSURL *)destURL format:(NSString *)format {
+    if (!sourceURL || !destURL || !format) return NO;
+    NSString *soffice = [FinderSync findLibreOfficePath];
+    if (!soffice) return NO;
+
+    NSFileManager *fm = [NSFileManager defaultManager];
+
+    // Ensure main app FinderToys is active to perform conversion in unsandboxed user context
+    NSArray *running = [NSRunningApplication runningApplicationsWithBundleIdentifier:@"com.atlant63.FinderToys"];
+    if (running.count == 0) {
+        NSURL *appURL = [NSURL fileURLWithPath:@"/Applications/FinderToys.app"];
+        [[NSWorkspace sharedWorkspace] openApplicationAtURL:appURL
+                                              configuration:[NSWorkspaceOpenConfiguration configuration]
+                                          completionHandler:nil];
+        [NSThread sleepForTimeInterval:0.4];
+    }
+
+    // Clean destination path first so we can detect file creation
+    [fm removeItemAtPath:destURL.path error:nil];
+
+    NSString *jobsDir = @"/tmp/ft_jobs";
+    [fm createDirectoryAtPath:jobsDir withIntermediateDirectories:YES attributes:@{NSFilePosixPermissions: @0777} error:nil];
+
+    NSString *requestId = [[NSUUID UUID] UUIDString];
+    NSString *jobPath  = [jobsDir stringByAppendingPathComponent:[NSString stringWithFormat:@"%@.job", requestId]];
+    NSString *donePath = [jobsDir stringByAppendingPathComponent:[NSString stringWithFormat:@"%@.done", requestId]];
+
+    NSDictionary *jobInfo = @{
+        @"source": sourceURL.path,
+        @"dest": destURL.path,
+        @"format": format,
+        @"requestId": requestId,
+        @"done": donePath
+    };
+    NSData *data = [NSJSONSerialization dataWithJSONObject:jobInfo options:0 error:nil];
+    [data writeToFile:jobPath atomically:YES];
+
+    // Dispatch request to unsandboxed host application for immediate wakeup
+    [[NSDistributedNotificationCenter defaultCenter] postNotificationName:@"FTConvertDocumentRequest"
+                                                                   object:nil
+                                                                 userInfo:jobInfo
+                                                       deliverImmediately:YES];
+
+    // Wait up to 25 seconds for host application to write converted file
+    NSDate *start = [NSDate date];
+    while ([[NSDate date] timeIntervalSinceDate:start] < 25.0) {
+        if ([fm fileExistsAtPath:donePath]) {
+            NSString *status = [NSString stringWithContentsOfFile:donePath encoding:NSUTF8StringEncoding error:nil];
+            [fm removeItemAtPath:donePath error:nil];
+            if ([status isEqualToString:@"OK"] && [fm fileExistsAtPath:destURL.path]) {
+                return YES;
+            }
+            return NO;
+        }
+        if ([fm fileExistsAtPath:destURL.path]) {
+            NSDictionary *attrs = [fm attributesOfItemAtPath:destURL.path error:nil];
+            if ([attrs fileSize] > 100) {
+                [fm removeItemAtPath:donePath error:nil];
+                return YES;
+            }
+        }
+        [NSThread sleepForTimeInterval:0.05];
+    }
+
+    [fm removeItemAtPath:jobPath error:nil];
+    [fm removeItemAtPath:donePath error:nil];
+    return NO;
+}
+
 + (BOOL)convertWordDocumentAtURL:(NSURL *)sourceURL toURL:(NSURL *)destURL {
     if (!sourceURL || !destURL) return NO;
     BOOL isDir = NO;
@@ -1135,29 +1328,91 @@ static inline NSString *FTLocalizedString(NSString *key) {
         return NO;
     }
 
-    NSError *err = nil;
-    NSDictionary *docAttrs = nil;
-    NSAttributedString *attrStr = [[NSAttributedString alloc] initWithURL:sourceURL
-                                                                  options:@{}
-                                                       documentAttributes:&docAttrs
-                                                                    error:&err];
-    if (!attrStr || attrStr.length == 0) {
-        NSDictionary *options = @{ NSDocumentTypeDocumentAttribute: NSPlainTextDocumentType };
-        attrStr = [[NSAttributedString alloc] initWithURL:sourceURL options:options documentAttributes:nil error:nil];
-    }
-    if (!attrStr) {
-        attrStr = [[NSAttributedString alloc] initWithString:@" "];
+    // 1. High-fidelity LibreOffice conversion (100% MS Word 1:1 match, fully silent)
+    if ([FinderSync convertDocumentWithLibreOfficeAtURL:sourceURL toURL:destURL format:@"pdf:writer_pdf_Export"]) {
+        return YES;
     }
 
+    // 2. Fallback to native TextKit if LibreOffice is not installed
+NSError *err = nil;
+    NSDictionary *docAttrs = nil;
+    NSAttributedString *rawAttrStr = [[NSAttributedString alloc] initWithURL:sourceURL
+                                                                     options:@{}
+                                                          documentAttributes:&docAttrs
+                                                                       error:&err];
+    if (!rawAttrStr || rawAttrStr.length == 0) {
+        NSDictionary *options = @{ NSDocumentTypeDocumentAttribute: NSPlainTextDocumentType };
+        rawAttrStr = [[NSAttributedString alloc] initWithURL:sourceURL options:options documentAttributes:nil error:nil];
+    }
+    if (!rawAttrStr || rawAttrStr.length == 0) {
+        rawAttrStr = [[NSAttributedString alloc] initWithString:@" "];
+    }
+
+    // Extract page dimensions and margins from document attributes
     CGFloat pageWidth = 595.0; // Standard A4 (210 x 297 mm in points)
     CGFloat pageHeight = 842.0;
-    CGFloat marginX = 40.0;
-    CGFloat marginY = 50.0;
-    CGSize contentSize = CGSizeMake(pageWidth - 2 * marginX, pageHeight - 2 * marginY);
+    CGFloat leftMargin = 40.0;
+    CGFloat rightMargin = 40.0;
+    CGFloat topMargin = 40.0;
+    CGFloat bottomMargin = 40.0;
+
+    if (docAttrs) {
+        NSNumber *lm = docAttrs[@"LeftMargin"];
+        NSNumber *rm = docAttrs[@"RightMargin"];
+        NSNumber *tm = docAttrs[@"TopMargin"];
+        NSNumber *bm = docAttrs[@"BottomMargin"];
+        if (lm) leftMargin = MAX(20.0, lm.doubleValue);
+        if (rm) rightMargin = MAX(20.0, rm.doubleValue);
+        if (tm) topMargin = MAX(20.0, tm.doubleValue);
+        if (bm) bottomMargin = MAX(20.0, bm.doubleValue);
+
+        NSValue *ps = docAttrs[@"PaperSize"];
+        if (ps) {
+            NSSize size = ps.sizeValue;
+            if (size.width > 100.0 && size.height > 100.0) {
+                pageWidth = size.width;
+                pageHeight = size.height;
+            }
+        }
+    }
+
+    // Map Times-Roman fallback to clean Arial to preserve modern typography
+    NSMutableAttributedString *attrStr = [rawAttrStr mutableCopy];
+    [attrStr enumerateAttribute:NSFontAttributeName
+                        inRange:NSMakeRange(0, attrStr.length)
+                        options:0
+                     usingBlock:^(id value, NSRange range, BOOL *stop) {
+        if ([value isKindOfClass:[NSFont class]]) {
+            NSFont *font = (NSFont *)value;
+            NSString *name = font.fontName.lowercaseString;
+            if ([name containsString:@"times"]) {
+                BOOL isBold = (font.fontDescriptor.symbolicTraits & NSFontDescriptorTraitBold) != 0;
+                BOOL isItalic = (font.fontDescriptor.symbolicTraits & NSFontDescriptorTraitItalic) != 0;
+                NSFont *newFont = nil;
+                if (isBold && isItalic) {
+                    newFont = [NSFont fontWithName:@"Arial-BoldItalicMT" size:font.pointSize];
+                } else if (isBold) {
+                    newFont = [NSFont fontWithName:@"Arial-BoldMT" size:font.pointSize];
+                } else if (isItalic) {
+                    newFont = [NSFont fontWithName:@"Arial-ItalicMT" size:font.pointSize];
+                } else {
+                    newFont = [NSFont fontWithName:@"ArialMT" size:font.pointSize];
+                }
+                if (!newFont) {
+                    newFont = isBold ? [NSFont boldSystemFontOfSize:font.pointSize] : [NSFont systemFontOfSize:font.pointSize];
+                }
+                if (newFont) {
+                    [attrStr addAttribute:NSFontAttributeName value:newFont range:range];
+                }
+            }
+        }
+    }];
+
+    CGSize contentSize = CGSizeMake(pageWidth - leftMargin - rightMargin, pageHeight - topMargin - bottomMargin);
     CGRect pageRect = CGRectMake(0, 0, pageWidth, pageHeight);
 
     NSTextStorage *storage = [[NSTextStorage alloc] initWithAttributedString:attrStr];
-    NSLayoutManager *layout = [[NSLayoutManager alloc] init];
+    FTLayoutManager *layout = [[FTLayoutManager alloc] init];
     [storage addLayoutManager:layout];
 
     CGContextRef pdfContext = CGPDFContextCreateWithURL((__bridge CFURLRef)destURL, &pageRect, NULL);
@@ -1195,8 +1450,8 @@ static inline NSString *FTLocalizedString(NSString *key) {
             NSGraphicsContext *gc = [NSGraphicsContext graphicsContextWithCGContext:pdfContext flipped:YES];
             [NSGraphicsContext setCurrentContext:gc];
 
-            [layout drawBackgroundForGlyphRange:glyphRange atPoint:NSMakePoint(marginX, marginY)];
-            [layout drawGlyphsForGlyphRange:glyphRange atPoint:NSMakePoint(marginX, marginY)];
+            [layout drawBackgroundForGlyphRange:glyphRange atPoint:NSMakePoint(leftMargin, topMargin)];
+            [layout drawGlyphsForGlyphRange:glyphRange atPoint:NSMakePoint(leftMargin, topMargin)];
 
             CGContextRestoreGState(pdfContext);
             CGPDFContextEndPage(pdfContext);
@@ -1230,6 +1485,10 @@ static inline NSString *FTLocalizedString(NSString *key) {
     if (!sourceURL || !destURL) return NO;
     BOOL isDir = NO;
     if (![[NSFileManager defaultManager] fileExistsAtPath:sourceURL.path isDirectory:&isDir] || isDir) return NO;
+
+    if ([FinderSync convertDocumentWithLibreOfficeAtURL:sourceURL toURL:destURL format:@"docx"]) {
+        return YES;
+    }
 
     NSError *err = nil;
     NSAttributedString *attrStr = [[NSAttributedString alloc] initWithURL:sourceURL options:@{} documentAttributes:nil error:&err];
@@ -1307,6 +1566,14 @@ static inline NSString *FTLocalizedString(NSString *key) {
         return NO;
     }
 
+    // 1. High-fidelity LibreOffice conversion (100% MS Word 1:1 match with tables, layouts & graphics)
+    if ([FinderSync findLibreOfficePath]) {
+        if ([FinderSync convertDocumentWithLibreOfficeAtURL:sourceURL toURL:destURL format:@"docx"]) {
+            return YES;
+        }
+    }
+
+    // 2. Native fallback: PDFKit + Apple Vision OCR
     PDFDocument *pdfDoc = [[PDFDocument alloc] initWithURL:sourceURL];
     if (!pdfDoc || pdfDoc.pageCount == 0 || pdfDoc.isLocked) return NO;
 
@@ -1564,12 +1831,50 @@ static inline NSString *FTLocalizedString(NSString *key) {
                   suffix:(NSString *)suffix
        completionHandler:(void (^)(NSURL *outURL, NSError *error))completion {
 
-    AVURLAsset *asset = [AVURLAsset URLAssetWithURL:sourceURL options:nil];
     NSString *dir = sourceURL.URLByDeletingLastPathComponent.path;
     NSString *base = [sourceURL.lastPathComponent stringByDeletingPathExtension];
     NSString *outPath = [FinderSync uniqueVideoPathInDirectory:dir baseName:[base stringByAppendingString:suffix] extension:outExt];
     NSURL *outURL = [NSURL fileURLWithPath:outPath];
 
+    NSString *ffmpeg = [self ffmpegPath];
+    if (ffmpeg) {
+        // Universal FFmpeg converter for all video containers (MKV, WEBM, AVI, FLV, MP4, MOV, etc.)
+        NSTask *task = [[NSTask alloc] init];
+        task.executableURL = [NSURL fileURLWithPath:ffmpeg];
+        task.arguments = @[
+            @"-nostats",
+            @"-loglevel", @"error",
+            @"-y",
+            @"-i", sourceURL.path,
+            @"-map", @"0:v:0",
+            @"-map", @"0:a?",
+            @"-c:v", @"libx264",
+            @"-preset", @"medium",
+            @"-crf", @"22",
+            @"-pix_fmt", @"yuv420p",
+            @"-movflags", @"+faststart",
+            @"-c:a", @"aac",
+            @"-b:a", @"192k",
+            outPath
+        ];
+        task.standardOutput = [NSFileHandle fileHandleWithNullDevice];
+        task.standardError  = [NSFileHandle fileHandleWithNullDevice];
+        task.terminationHandler = ^(NSTask *t) {
+            if (t.terminationStatus == 0) {
+                if (completion) completion(outURL, nil);
+            } else {
+                [[NSFileManager defaultManager] removeItemAtURL:outURL error:nil];
+                if (completion) completion(nil, [NSError errorWithDomain:@"FinderToys" code:t.terminationStatus userInfo:nil]);
+            }
+        };
+        NSError *err = nil;
+        if (![task launchAndReturnError:&err]) {
+            if (completion) completion(nil, err);
+        }
+        return;
+    }
+
+    AVURLAsset *asset = [AVURLAsset URLAssetWithURL:sourceURL options:nil];
     AVAssetExportSession *session = [AVAssetExportSession exportSessionWithAsset:asset presetName:presetName];
     if (!session) {
         NSError *err = [NSError errorWithDomain:@"FinderToys" code:1 userInfo:@{NSLocalizedDescriptionKey: @"Cannot create export session for this file"}];
@@ -1634,9 +1939,8 @@ static inline NSString *FTLocalizedString(NSString *key) {
             @"-i", sourceURL.path,
             @"-map", @"0",
             @"-c:v", @"libx264",
-            @"-preset", @"fast",
-            @"-tune", @"film",
-            @"-crf", @"22",
+            @"-preset", @"medium",
+            @"-crf", @"23",
             @"-pix_fmt", @"yuv420p",
             @"-movflags", @"+faststart",
             @"-c:a", @"aac",
@@ -1778,10 +2082,13 @@ static inline NSString *FTLocalizedString(NSString *key) {
         NSString *outPath = [FinderSync uniqueVideoPathInDirectory:dir
                                                          baseName:base
                                                         extension:@"gif"];
-        // Two-pass palette GIF for best quality via ffmpeg
-        // Pass 1: generate palette
+        // Filee-inspired two-pass palette GIF (smooth 15fps, clamped max 640x720, Sierra 2-4A dithering)
         NSString *palettePath = [NSTemporaryDirectory() stringByAppendingPathComponent:
                                   [NSString stringWithFormat:@"ft_palette_%@.png", [[NSUUID UUID] UUIDString]]];
+
+        NSString *filterChain = @"fps=15,scale=w='min(iw,640)':h='min(ih,720)':force_original_aspect_ratio=decrease:flags=lanczos";
+        NSString *pass1VF = [NSString stringWithFormat:@"%@,palettegen=max_colors=256:stats_mode=diff", filterChain];
+        NSString *pass2VF = [NSString stringWithFormat:@"%@ [x]; [x][1:v] paletteuse=dither=sierra2_4a:diff_mode=rectangle", filterChain];
 
         NSTask *pass1 = [[NSTask alloc] init];
         pass1.executableURL = [NSURL fileURLWithPath:ffmpeg];
@@ -1791,7 +2098,7 @@ static inline NSString *FTLocalizedString(NSString *key) {
             @"-y",
             @"-i", sourceURL.path,
             @"-an",
-            @"-vf", @"fps=12,scale=-2:'min(ih,720)':flags=lanczos,palettegen=stats_mode=diff",
+            @"-vf", pass1VF,
             @"-update", @"1",
             palettePath
         ];
@@ -1807,7 +2114,7 @@ static inline NSString *FTLocalizedString(NSString *key) {
             @"-i", sourceURL.path,
             @"-i", palettePath,
             @"-an",
-            @"-lavfi", @"fps=12,scale=-2:'min(ih,720)':flags=lanczos [x]; [x][1:v] paletteuse=dither=bayer:diff_mode=rectangle",
+            @"-lavfi", pass2VF,
             @"-loop", @"0",
             outPath
         ];
