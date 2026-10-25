@@ -837,29 +837,6 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     });
 }
 
-+ (void)normalizeDocxTypographyAtTempPath:(NSString *)docxPath {
-    if (!docxPath || ![[NSFileManager defaultManager] fileExistsAtPath:docxPath]) return;
-
-    NSString *scriptPath = [[NSBundle mainBundle] pathForResource:@"normalize_docx" ofType:@"py"];
-    if (!scriptPath || ![[NSFileManager defaultManager] fileExistsAtPath:scriptPath]) {
-        scriptPath = @"/Applications/FinderToys.app/Contents/Resources/normalize_docx.py";
-    }
-    if (![[NSFileManager defaultManager] fileExistsAtPath:scriptPath]) {
-        scriptPath = @"/Volumes/LexarAPFS/App/Finder toys/FinderToys/normalize_docx.py";
-    }
-    if (![[NSFileManager defaultManager] fileExistsAtPath:scriptPath]) return;
-
-    NSTask *task = [[NSTask alloc] init];
-    task.executableURL = [NSURL fileURLWithPath:@"/usr/bin/python3"];
-    task.arguments = @[scriptPath, docxPath];
-    task.standardOutput = [NSFileHandle fileHandleWithNullDevice];
-    task.standardError  = [NSFileHandle fileHandleWithNullDevice];
-    NSError *err = nil;
-    if ([task launchAndReturnError:&err]) {
-        [task waitUntilExit];
-    }
-}
-
 // Filee-inspired isolated LibreOffice execution with dedicated profile, private outdir & watchdog timeout
 + (BOOL)convertDocumentAtSourcePath:(NSString *)sourcePath destPath:(NSString *)destPath format:(NSString *)format {
     NSString *soffice = [AppDelegate findLibreOfficePath];
@@ -889,10 +866,6 @@ static CGEventRef eventTapCallback(CGEventTapProxy proxy, CGEventType type, CGEv
     NSString *tempInputToUse = [fm fileExistsAtPath:tempInputPath] ? tempInputPath : sourcePath;
     NSString *ext = [format containsString:@":"] ? [[format componentsSeparatedByString:@":"] firstObject] : format;
 
-    // Smart Typography Enhancer: for Word -> PDF, bump small body fonts (<12pt) to 12pt and normalize to legal serif
-    if ([sourceExt.lowercaseString isEqualToString:@"docx"] && [ext.lowercaseString isEqualToString:@"pdf"]) {
-        [AppDelegate normalizeDocxTypographyAtTempPath:tempInputToUse];
-    }
 
     NSMutableArray<NSString *> *args = [NSMutableArray array];
     [args addObject:[NSString stringWithFormat:@"-env:UserInstallation=file://%@", tempProfile]];
