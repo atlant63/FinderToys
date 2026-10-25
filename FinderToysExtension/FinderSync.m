@@ -326,59 +326,64 @@ static inline NSString *FTLocalizedString(NSString *key) {
 - (NSMenu *)menuForMenuKind:(FIMenuKind)whichMenu {
     NSMenu *menu = [[NSMenu alloc] initWithTitle:@""];
 
-    // Create submenu for New File options
-    NSMenu *submenu = [[NSMenu alloc] initWithTitle:@""];
+    // Check selected items:
+    NSArray<NSURL *> *selectedURLs = [[FIFinderSyncController defaultController] selectedItemURLs];
+    BOOL isItemMenu = (whichMenu == FIMenuKindContextualMenuForItems && selectedURLs.count > 0);
 
-    // Add "New Text File" to submenu
-    NSMenuItem *newTextItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Text File", nil) action:@selector(createNewTextFile:) keyEquivalent:@""];
-    NSImage *textIcon = [NSImage imageNamed:@"edit"];
-    textIcon.template = YES;
-    newTextItem.image = textIcon;
-    [submenu addItem:newTextItem];
+    // Only show "New File" submenu when clicking on empty background space or toolbar, NEVER when right-clicking on selected files/folders!
+    if (!isItemMenu) {
+        NSMenu *submenu = [[NSMenu alloc] initWithTitle:@""];
 
-    // Add "New Markdown File" to submenu
-    NSMenuItem *newMarkdownItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Markdown File", nil) action:@selector(createNewMarkdownFile:) keyEquivalent:@""];
-    NSImage *markdownIcon = [NSImage imageNamed:@"document"];
-    markdownIcon.template = YES;
-    newMarkdownItem.image = markdownIcon;
-    [submenu addItem:newMarkdownItem];
+        // Add "New Text File" to submenu
+        NSMenuItem *newTextItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Text File", nil) action:@selector(createNewTextFile:) keyEquivalent:@""];
+        NSImage *textIcon = [NSImage imageNamed:@"edit"];
+        textIcon.template = YES;
+        newTextItem.image = textIcon;
+        [submenu addItem:newTextItem];
 
-    // Add "New JSON File" to submenu
-    NSMenuItem *newJSONItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"JSON File", nil) action:@selector(createNewJSONFile:) keyEquivalent:@""];
-    newJSONItem.image = [self jsonIcon];
-    [submenu addItem:newJSONItem];
+        // Add "New Markdown File" to submenu
+        NSMenuItem *newMarkdownItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Markdown File", nil) action:@selector(createNewMarkdownFile:) keyEquivalent:@""];
+        NSImage *markdownIcon = [NSImage imageNamed:@"document"];
+        markdownIcon.template = YES;
+        newMarkdownItem.image = markdownIcon;
+        [submenu addItem:newMarkdownItem];
 
-    // Add "New Microsoft Word Document" to submenu
-    NSMenuItem *newWordItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Microsoft Word Document", nil) action:@selector(createNewWordDocument:) keyEquivalent:@""];
-    NSImage *wordIcon = [NSImage imageNamed:@"word"];
-    wordIcon.template = YES;
-    newWordItem.image = wordIcon;
-    [submenu addItem:newWordItem];
+        // Add "New JSON File" to submenu
+        NSMenuItem *newJSONItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"JSON File", nil) action:@selector(createNewJSONFile:) keyEquivalent:@""];
+        newJSONItem.image = [self jsonIcon];
+        [submenu addItem:newJSONItem];
 
-    // Add "New Microsoft Excel Spreadsheet" to submenu
-    NSMenuItem *newExcelItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Microsoft Excel Spreadsheet", nil) action:@selector(createNewExcelDocument:) keyEquivalent:@""];
-    NSImage *excelIcon = [NSImage imageNamed:@"excel"];
-    excelIcon.template = YES;
-    newExcelItem.image = excelIcon;
-    [submenu addItem:newExcelItem];
+        // Add "New Microsoft Word Document" to submenu
+        NSMenuItem *newWordItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Microsoft Word Document", nil) action:@selector(createNewWordDocument:) keyEquivalent:@""];
+        NSImage *wordIcon = [NSImage imageNamed:@"word"];
+        wordIcon.template = YES;
+        newWordItem.image = wordIcon;
+        [submenu addItem:newWordItem];
 
-    // Add "New Microsoft PowerPoint Presentation" to submenu
-    NSMenuItem *newPowerPointItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Microsoft PowerPoint Presentation", nil) action:@selector(createNewPowerPointDocument:) keyEquivalent:@""];
-    NSImage *powerPointIcon = [NSImage imageNamed:@"powerpoint"];
-    powerPointIcon.template = YES;
-    newPowerPointItem.image = powerPointIcon;
-    [submenu addItem:newPowerPointItem];
+        // Add "New Microsoft Excel Spreadsheet" to submenu
+        NSMenuItem *newExcelItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Microsoft Excel Spreadsheet", nil) action:@selector(createNewExcelDocument:) keyEquivalent:@""];
+        NSImage *excelIcon = [NSImage imageNamed:@"excel"];
+        excelIcon.template = YES;
+        newExcelItem.image = excelIcon;
+        [submenu addItem:newExcelItem];
 
-    // 1. Add "New File" submenu
-    NSMenuItem *mainItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"New File", nil) action:nil keyEquivalent:@""];
-    NSImage *mainIcon = [NSImage imageNamed:@"add"];
-    mainItem.image = mainIcon;
-    mainItem.submenu = submenu;
-    [menu addItem:mainItem];
+        // Add "New Microsoft PowerPoint Presentation" to submenu
+        NSMenuItem *newPowerPointItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"Microsoft PowerPoint Presentation", nil) action:@selector(createNewPowerPointDocument:) keyEquivalent:@""];
+        NSImage *powerPointIcon = [NSImage imageNamed:@"powerpoint"];
+        powerPointIcon.template = YES;
+        newPowerPointItem.image = powerPointIcon;
+        [submenu addItem:newPowerPointItem];
+
+        // 1. Add "New File" submenu
+        NSMenuItem *mainItem = [[NSMenuItem alloc] initWithTitle:NSLocalizedString(@"New File", nil) action:nil keyEquivalent:@""];
+        NSImage *mainIcon = [NSImage imageNamed:@"add"];
+        mainItem.image = mainIcon;
+        mainItem.submenu = submenu;
+        [menu addItem:mainItem];
+    }
 
     // Check selected items: ONLY show Convert and PDF actions when right-clicking on specific files!
-    NSArray<NSURL *> *selectedURLs = [[FIFinderSyncController defaultController] selectedItemURLs];
-    if (whichMenu == FIMenuKindContextualMenuForItems && selectedURLs.count > 0) {
+    if (isItemMenu) {
         NSMutableArray<NSURL *> *imageURLs = [NSMutableArray array];
         NSMutableArray<NSURL *> *pdfURLs = [NSMutableArray array];
         NSMutableArray<NSURL *> *videoURLs = [NSMutableArray array];

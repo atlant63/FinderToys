@@ -79,6 +79,8 @@ if [ -f "$SCRIPT_DIR/FinderToys/it.lproj/Localizable.strings" ]; then
     cp "$SCRIPT_DIR/FinderToys/it.lproj/Localizable.strings" "$APP_DIR/Contents/Resources/it.lproj/"
 fi
 cp "$SCRIPT_DIR/FinderToysExtension/Assets.xcassets/add.imageset/add.png" "$APP_DIR/Contents/Resources/add.png" 2>/dev/null || true
+cp "$SCRIPT_DIR/FinderToys/normalize_docx.py" "$APP_DIR/Contents/Resources/normalize_docx.py" 2>/dev/null || true
+chmod +x "$APP_DIR/Contents/Resources/normalize_docx.py" 2>/dev/null || true
 cp "$SCRIPT_DIR/FinderToysExtension/Assets.xcassets/add.imageset/add-dark.png" "$APP_DIR/Contents/Resources/add-dark.png" 2>/dev/null || true
 if [ -f "$SCRIPT_DIR/FinderToys/AppIcon.icns" ]; then
     cp "$SCRIPT_DIR/FinderToys/AppIcon.icns" "$APP_DIR/Contents/Resources/AppIcon.icns"
